@@ -1,0 +1,4 @@
+customtkinter
+pillow
+packaging
+pytest
