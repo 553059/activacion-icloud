@@ -4,6 +4,7 @@ import re
 import tempfile
 import os
 import shutil
+import time
 
 # ---- Utilidades ----
 def _run(cmd, timeout=30):
@@ -57,10 +58,41 @@ def _stream(cmd, timeout=None):
     p.wait()
     return "".join(out), p.returncode
 
+
+def _run_with_retries(cmd, timeout=30, retries=2, delay=0.6):
+    """Ejecuta `_run` con reintentos para errores transitorios relacionados con lockdownd/mux."""
+    last_out = last_err = None
+    for attempt in range(retries + 1):
+        out, err, rc = _run(cmd, timeout=timeout)
+        last_out, last_err = out, err
+        combined = (out or "") + (err or "")
+        if rc == 0:
+            return out, err, rc
+        if re.search(r'lockdownd|mux error|invalid hostid', combined, re.I) and attempt < retries:
+            time.sleep(delay)
+            continue
+        return out, err, rc
+    return last_out, last_err, rc
+
+
+def _stream_with_retries(cmd, timeout=None, retries=2, delay=0.6):
+    """Ejecuta `_stream` con reintentos para errores transitorios relacionados con lockdownd/mux."""
+    last_out = None
+    for attempt in range(retries + 1):
+        out, rc = _stream(cmd, timeout=timeout)
+        last_out = out
+        if rc == 0:
+            return out, rc
+        if re.search(r'lockdownd|mux error|invalid hostid', out, re.I) and attempt < retries:
+            time.sleep(delay)
+            continue
+        return out, rc
+    return last_out, rc
+
 # ---- Funciones públicas ----
 def list_devices():
     try:
-        out, err, rc = _run(["idevice_id", "-l"], timeout=5)
+        out, err, rc = _run_with_retries(["idevice_id", "-l"], timeout=5, retries=2)
     except FileNotFoundError:
         # libimobiledevice no instalado / no en PATH
         return []
@@ -72,7 +104,7 @@ def list_devices():
 
 def get_device_info(udid: str):
     try:
-        out, err, rc = _run(["ideviceinfo", "-u", udid], timeout=8)
+        out, err, rc = _run_with_retries(["ideviceinfo", "-u", udid], timeout=8, retries=2)
     except FileNotFoundError:
         raise RuntimeError("ideviceinfo no disponible en PATH")
     except subprocess.TimeoutExpired:
@@ -110,7 +142,7 @@ def extract_owner_info(udid: str):
     combined = ""
     for cmd in tries:
         try:
-            out, err, rc = _run(cmd, timeout=12)
+            out, err, rc = _run_with_retries(cmd, timeout=12, retries=2)
             combined += out + err
             if out.strip():
                 break
@@ -138,7 +170,7 @@ def analyze_panics(udid: str):
     tmpdir = tempfile.mkdtemp(prefix="jarvis_ips_")
     try:
         # intentar descargar a tmpdir (idevicecrashreport suele aceptar carpeta destino)
-        out, rc = _stream(["idevicecrashreport", "-u", udid, tmpdir])
+        out, rc = _stream_with_retries(["idevicecrashreport", "-u", udid, tmpdir], retries=2)
     except FileNotFoundError:
         shutil.rmtree(tmpdir, ignore_errors=True)
         raise RuntimeError("idevicecrashreport no disponible en PATH")
@@ -177,7 +209,7 @@ def request_activation_ticket(udid: str):
     combined = ""
     for cmd in tries:
         try:
-            out, err, rc = _run(cmd, timeout=12)
+            out, err, rc = _run_with_retries(cmd, timeout=12, retries=2)
             combined += out + err
             if out.strip():
                 break
@@ -195,7 +227,7 @@ def restart_springboard(udid: str):
     ]
     for cmd in cmds:
         try:
-            out, err, rc = _run(cmd, timeout=8)
+            out, err, rc = _run_with_retries(cmd, timeout=8, retries=2)
             if rc == 0:
                 return out + err
         except FileNotFoundError:
