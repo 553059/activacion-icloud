@@ -7,15 +7,50 @@ import shutil
 
 # ---- Utilidades ----
 def _run(cmd, timeout=30):
-    """Ejecuta comando y devuelve (stdout, stderr). Lanza FileNotFoundError si no existe."""
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    """Ejecuta comando y devuelve (stdout, stderr). Lanza FileNotFoundError si no existe.
+
+    En Windows evitamos que los procesos hijos creen consolas visibles usando
+    `creationflags=subprocess.CREATE_NO_WINDOW` y `STARTUPINFO` si procede.
+    """
+    run_kwargs = {"capture_output": True, "text": True, "timeout": timeout}
+    if os.name == "nt":
+        # Evitar consolas visibles en Windows
+        try:
+            run_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        except AttributeError:
+            pass
+        try:
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = subprocess.SW_HIDE
+            run_kwargs["startupinfo"] = si
+        except Exception:
+            pass
+    proc = subprocess.run(cmd, **run_kwargs)
     stdout = proc.stdout or ""
     stderr = proc.stderr or ""
     return stdout, stderr, proc.returncode
 
+
 def _stream(cmd, timeout=None):
-    """Ejecuta comando y recoge stdout combinado (uso simple)."""
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    """Ejecuta comando y recoge stdout combinado (uso simple).
+
+    Aseguramos que en Windows los procesos hijos no muestren una consola.
+    """
+    popen_kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT, "text": True, "bufsize": 1}
+    if os.name == "nt":
+        try:
+            popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        except AttributeError:
+            pass
+        try:
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = subprocess.SW_HIDE
+            popen_kwargs["startupinfo"] = si
+        except Exception:
+            pass
+    p = subprocess.Popen(cmd, **popen_kwargs)
     out = []
     for line in iter(p.stdout.readline, ""):
         out.append(line)
