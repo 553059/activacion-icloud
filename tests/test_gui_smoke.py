@@ -6,7 +6,7 @@ import backend_modules as bm
 from main import JarvisApp
 
 
-@pytest.mark.skipif(sys.platform.startswith("linux") and os.environ.get("CI"), reason="Headless CI - skipping GUI test")
+@pytest.mark.skipif(sys.platform.startswith("linux") and os.environ.get("CI") == "true", reason="Headless CI - skipping GUI test")
 def test_gui_update_device_panel(tmp_path, monkeypatch):
     # prevent background poll_device from blocking by mocking backend device calls
     monkeypatch.setattr(bm, "list_devices", lambda: [])
