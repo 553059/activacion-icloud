@@ -120,7 +120,18 @@ def get_device_info(udid: str):
     def find_regex(pattern):
         m = re.search(pattern, out, re.IGNORECASE)
         return m.group(1) if m else None
-    imei = info.get("IMEI") or find_regex(r"IMEI[:\s]*([0-9A-Za-z]+)")
+    # Prefer explicit keys that contain 'imei' to avoid false matches inside other words
+    imei = info.get("IMEI")
+    if not imei:
+        for k, v in info.items():
+            if 'imei' in k.lower():
+                imei = v
+                break
+    # fallback: regex with word boundary to avoid matching inside words like 'TimeIntervalSince1970'
+    if not imei:
+        imei = find_regex(r"\bIMEI\b[:\s]*([0-9A-Za-z]+)")
+    if isinstance(imei, str):
+        imei = imei.strip()
     return {
         "udid": udid,
         "model": info.get("ProductType") or info.get("DeviceClass") or info.get("DeviceName"),
