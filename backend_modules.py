@@ -121,13 +121,20 @@ def get_device_info(udid: str):
         m = re.search(pattern, out, re.IGNORECASE)
         return m.group(1) if m else None
     # Prefer explicit keys that contain 'imei' to avoid false matches inside other words
-    imei = info.get("IMEI")
+    imei = None
+    # 1) Prefer explicit keys that clearly indicate IMEI (exact or ending with 'imei')
+    for k, v in info.items():
+        kl = re.sub(r"\W+", "", k or "").lower()
+        if kl == "imei" or kl.endswith("imei") or "internationalmobileequipmentidentity" in kl:
+            imei = (v or "").strip()
+            break
+    # 2) If not found, prefer any value that *looks like* an IMEI (15-16 digit number)
     if not imei:
-        for k, v in info.items():
-            if 'imei' in k.lower():
-                imei = v
+        for v in info.values():
+            if isinstance(v, str) and re.fullmatch(r"\d{14,16}", v.strip()):
+                imei = v.strip()
                 break
-    # fallback: regex with word boundary to avoid matching inside words like 'TimeIntervalSince1970'
+    # 3) fallback: search raw output for word-boundary 'IMEI' followed by digits/word
     if not imei:
         imei = find_regex(r"\bIMEI\b[:\s]*([0-9A-Za-z]+)")
     if isinstance(imei, str):

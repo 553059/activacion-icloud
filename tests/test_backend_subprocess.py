@@ -36,6 +36,25 @@ def test_get_device_info_parsing(monkeypatch):
     assert info["ios_version"] == "14.4"
 
 
+def test_get_device_info_avoids_timeinterval_trap(monkeypatch):
+    # ensure that keys like TimeIntervalSince1970 don't get picked as IMEI
+    sample = (
+        "ProductType: iPhone8,1\n"
+        "SerialNumber: ABCDEF123\n"
+        "TimeIntervalSince1970: 1771474332.9144621\n"
+        "InternationalMobileEquipmentIdentity: 352033764956566\n"
+        "ProductVersion: 14.4\n"
+    )
+
+    def fake_run(cmd, capture_output=True, text=True, timeout=None):
+        return types.SimpleNamespace(stdout=sample, stderr="", returncode=0)
+
+    monkeypatch.setattr(bm, "subprocess", types.SimpleNamespace(run=fake_run))
+    info = bm.get_device_info("UDID-T")
+    assert info["imei"] == "352033764956566"
+
+
+
 def test_extract_owner_info_masks(monkeypatch):
     sample = "OwnerEmail: owner@example.com\nOwnerPhone: +1 555 987 1234\n"
 
