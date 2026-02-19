@@ -174,8 +174,24 @@ def generate_ssl():
     def gen_cert(cert_path, key_path, cn):
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)])
-        san = x509.SubjectAlternativeName([x509.DNSName('localhost')])
-        import datetime as _dt
+        # Build SANs: include localhost and loopback, plus the primary local IP if available
+        import datetime as _dt, socket, ipaddress
+        san_entries = [x509.DNSName('localhost')]
+        try:
+            san_entries.append(x509.IPAddress(ipaddress.IPv4Address('127.0.0.1')))
+        except Exception:
+            pass
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+            san_entries.append(x509.IPAddress(ipaddress.ip_address(local_ip)))
+        except Exception:
+            # ignore if cannot determine local IP
+            pass
+        san = x509.SubjectAlternativeName(san_entries)
+
         cert = (
             x509.CertificateBuilder()
             .subject_name(name)
