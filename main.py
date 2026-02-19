@@ -222,6 +222,8 @@ class JarvisApp(ctk.CTk):
     def _populate_server(self, parent):
         ctk.CTkLabel(parent, text="Server Interceptor", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="nw", padx=12, pady=8)
         ctk.CTkButton(parent, text="Solicitar Ticket de Activación", command=self.request_activation_ticket, fg_color="#0066CC", width=280).pack(padx=12, pady=10)
+        # Nuevo: botón para intentar activar el dispositivo usando el ticket (confirmación requerida)
+        ctk.CTkButton(parent, text="Activar dispositivo", command=self.activate_device, fg_color="#20A020", width=280).pack(padx=12, pady=(0,10))
         self.server_text = ctk.CTkTextbox(parent, height=420)
         self.server_text.pack(fill="both", expand=True, padx=12, pady=8)
         self.server_text.configure(state="disabled")
@@ -535,6 +537,71 @@ class JarvisApp(ctk.CTk):
         except Exception:
             return None
 
+    def activate_device(self):
+        """Solicita ticket de activación y, previo confirmación, intenta activar el dispositivo conectado.
+
+        La activación se ejecuta en un hilo fondo; los fallos se registran en la consola y se muestran mensajes modales.
+        """
+        if not self.current_udid:
+            messagebox.showwarning("No device", "Conecta un dispositivo por USB primero.")
+            return
+        # pedir confirmación explicita
+        if not messagebox.askyesno("Activar dispositivo", "Esto ejecutará la activación en el dispositivo conectado. ¿Deseas continuar?"):
+            return
+
+        def task():
+            udid = self.current_udid
+            try:
+                self.log("Solicitando ticket de activación (raw) para activación...")
+                raw = backend.request_activation_ticket(udid)
+                # guardar ticket en logs para referencia / auditoría
+                logs_dir = os.path.join(os.path.dirname(__file__), "logs")
+                os.makedirs(logs_dir, exist_ok=True)
+                ticket_path = os.path.join(logs_dir, f"activation_ticket_{udid}.xml")
+                with open(ticket_path, "w", encoding="utf-8") as fh:
+                    fh.write(raw)
+                self.log(f"Ticket guardado en: {ticket_path}")
+
+                # ejecutar activación usando backend.perform_activation (si falla, se captura)
+                self.log("Ejecutando activación en el dispositivo...")
+                try:
+                    out = backend.perform_activation(udid, raw)
+                    self.log("Activación completada. Output:\n" + (out or "sin salida"))
+                    self.after(0, lambda: messagebox.showinfo("Activación", "Activación completada. Consulta logs para detalles."))
+                except Exception as e:
+                    self.log(f"[ERROR] activate_device: {e}")
+                    self.after(0, lambda: messagebox.showerror("Activación", f"Fallo en activación: {e}"))
+            except Exception as e:
+                self.log(f"[ERROR] activate_device: {e}")
+        threading.Thread(target=task, daemon=True).start()
+
+    def save_activation_ticket(self):
+        """Modo manual: solicita el ticket y lo guarda en `logs/activation_ticket_<UDID>.xml` sin ejecutar la activación."""
+        udid = self.current_udid
+        if not udid:
+            messagebox.showwarning("No device", "Conecta un dispositivo por USB primero.")
+            return
+
+        def task():
+            try:
+                self.log("Solicitando ticket de activación (raw) — modo manual (solo guardar)...")
+                raw = backend.request_activation_ticket(udid)
+                logs_dir = os.path.join(os.path.dirname(__file__), "logs")
+                os.makedirs(logs_dir, exist_ok=True)
+                ticket_path = os.path.join(logs_dir, f"activation_ticket_{udid}.xml")
+                with open(ticket_path, "w", encoding="utf-8") as fh:
+                    fh.write(raw)
+                self.log(f"Ticket guardado en: {ticket_path}")
+                try:
+                    self.log_structured("Activation ticket saved", {"udid": udid, "path": ticket_path}, level="INFO", category="SERVER")
+                except Exception:
+                    pass
+                self.after(0, lambda: messagebox.showinfo("Ticket guardado", f"Ticket guardado en:\n{ticket_path}"))
+            except Exception as e:
+                self.log(f"[ERROR] save_activation_ticket: {e}")
+                self.after(0, lambda: messagebox.showerror("Ticket", f"No se pudo obtener el ticket: {e}"))
+        threading.Thread(target=task, daemon=True).start()
+
     def open_captive_portal(self):
         ip = self._get_local_ip()
         if not ip:
@@ -551,23 +618,35 @@ class JarvisApp(ctk.CTk):
             webbrowser.open(url_http)
         except Exception:
             pass
+
+        # Si no hay GUI inicializada (p. ej. entornos headless/tests) no intentamos crear el popup
+        # check instance __dict__ to avoid invoking tkinter's descriptor __getattr__
+        if not self.__dict__.get('tk'):
+            self.log("[WARN] open_captive_portal: GUI no disponible, omitiendo popup")
+            return
+
         # popup con instrucciones y enlace al QR
-        popup = ctk.CTkToplevel(self)
-        popup.title("Abrir portal en iPhone / QR")
-        popup.geometry("480x360")
-        ctk.CTkLabel(popup, text="URL copiada al portapapeles. Abre Safari en tu iPhone o escanea el QR.", wraplength=440).pack(padx=12, pady=(12,8))
-        ctk.CTkLabel(popup, text=url_https, text_color="#00A2E6", wraplength=440).pack(padx=12, pady=(0,8))
-        def open_qr():
-            qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + urllib.parse.quote_plus(url_https)
-            try:
-                webbrowser.open(qr_url)
-            except Exception:
-                pass
-        ctk.CTkButton(popup, text="Abrir QR en navegador", command=open_qr, fg_color="#007ACC").pack(pady=(8,6), padx=12)
-        # botón rápido para generar Recovery PDF desde la app
-        ctk.CTkButton(popup, text="Generar Recovery PDF (desde servidor)", command=lambda: webbrowser.open(url_http + 'recovery-kit'), fg_color="#7046FF").pack(pady=(6,6))
-        ctk.CTkButton(popup, text="Descargar certificado (server.crt)", command=lambda: webbrowser.open(url_http + 'certs/server.crt'), fg_color="#0066CC").pack(pady=(6,6))
-        ctk.CTkButton(popup, text="Cerrar", command=popup.destroy, fg_color="#005B5B").pack(pady=(6,12))
+        try:
+            popup = ctk.CTkToplevel(self)
+            popup.title("Abrir portal en iPhone / QR")
+            popup.geometry("480x360")
+            ctk.CTkLabel(popup, text="URL copiada al portapapeles. Abre Safari en tu iPhone o escanea el QR.", wraplength=440).pack(padx=12, pady=(12,8))
+            ctk.CTkLabel(popup, text=url_https, text_color="#00A2E6", wraplength=440).pack(padx=12, pady=(0,8))
+            def open_qr():
+                qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + urllib.parse.quote_plus(url_https)
+                try:
+                    webbrowser.open(qr_url)
+                except Exception:
+                    pass
+            ctk.CTkButton(popup, text="Abrir QR en navegador", command=open_qr, fg_color="#007ACC").pack(pady=(8,6), padx=12)
+            # botón rápido para generar Recovery PDF desde la app
+            ctk.CTkButton(popup, text="Generar Recovery PDF (desde servidor)", command=lambda: webbrowser.open(url_http + 'recovery-kit'), fg_color="#7046FF").pack(pady=(6,6))
+            ctk.CTkButton(popup, text="Guardar ticket (modo manual)", command=self.save_activation_ticket, fg_color="#20A020").pack(pady=(6,6))
+            ctk.CTkButton(popup, text="Descargar certificado (server.crt)", command=lambda: webbrowser.open(url_http + 'certs/server.crt'), fg_color="#0066CC").pack(pady=(6,6))
+            ctk.CTkButton(popup, text="Cerrar", command=popup.destroy, fg_color="#005B5B").pack(pady=(6,12))
+        except Exception as e:
+            # Guardar el error en el log para entornos headless o cuando la creación del popup falle
+            self.log(f"[ERROR] open_captive_portal: {e}")
 
     def generate_recovery_pdf(self):
         # diálogo simple para solicitar datos y generar el PDF localmente
@@ -826,7 +905,20 @@ class JarvisApp(ctk.CTk):
             self.log_history.append(text)
         except Exception:
             pass
-        self.log_queue.put(text)
+        # enqueue for console rendering
+        try:
+            self.log_queue.put(text)
+        except Exception:
+            pass
+        # also append to a live logfile so tests / external watchers can follow events in real time
+        try:
+            logs_dir = os.path.join(os.path.dirname(__file__), "logs")
+            os.makedirs(logs_dir, exist_ok=True)
+            lf = os.path.join(logs_dir, "live.log")
+            with open(lf, "a", encoding="utf-8") as fh:
+                fh.write(text)
+        except Exception:
+            pass
 
     def _process_log_queue(self):
         try:

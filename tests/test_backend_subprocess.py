@@ -129,3 +129,12 @@ def test_list_devices_handles_missing_tool(monkeypatch):
         raise FileNotFoundError
     monkeypatch.setattr(bm, "subprocess", types.SimpleNamespace(run=fake_run))
     assert bm.list_devices() == []
+
+
+def test_perform_activation_writes_and_runs(monkeypatch, tmp_path):
+    """perform_activation debe escribir el ticket y ejecutar ideviceactivation; en éxito devuelve la salida."""
+    sample_ticket = "<xml>ticket</xml>"
+    # simular que _run_with_retries devuelve rc==0
+    monkeypatch.setattr(bm, "_run_with_retries", lambda cmd, timeout=30, retries=2: ("OK", "", 0))
+    out = bm.perform_activation("UD-ACT", sample_ticket)
+    assert "OK" in out

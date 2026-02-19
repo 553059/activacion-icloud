@@ -163,3 +163,104 @@ def test_open_captive_portal_handles_no_ip(monkeypatch):
     # clipboard operations may raise; ensure no exception
     app.open_captive_portal()
     assert 'open' in called
+
+
+def test_open_captive_portal_handles_toplevel_exception(monkeypatch):
+    """Si la creación del popup falla (p. ej. en entornos headless), la función debe capturar la excepción y registrarla."""
+    monkeypatch.setattr(JarvisApp, '__init__', _fake_init_extended)
+    app = JarvisApp()
+    monkeypatch.setattr(JarvisApp, '_get_local_ip', lambda s: '127.0.0.1')
+    # simular que CTkToplevel lanza una excepción
+    # (asegurar que la 'tk' existe para forzar la ruta que crea widgets)
+    app.__dict__['tk'] = object()
+    class Bomb:
+        def __init__(self, *a, **k):
+            raise RuntimeError('boom')
+    monkeypatch.setattr(main.ctk, 'CTkToplevel', Bomb)
+    # evitar abrir el navegador
+    monkeypatch.setattr(webbrowser, 'open', lambda *a, **k: None)
+
+    # no debe propagarse la excepción
+    app.open_captive_portal()
+    assert any('open_captive_portal' in str(x).lower() and 'error' in str(x).lower() for x in app.log_history)
+
+
+def test_activate_device_shows_warning_when_no_device(monkeypatch):
+    monkeypatch.setattr(JarvisApp, '__init__', _fake_init_extended)
+    app = JarvisApp()
+    called = {}
+    monkeypatch.setattr(main.messagebox, 'showwarning', lambda *a, **k: called.update({'warn': True}))
+    app.activate_device()
+    assert called.get('warn')
+
+
+def test_activate_device_requests_ticket_and_runs(monkeypatch):
+    monkeypatch.setattr(JarvisApp, '__init__', _fake_init_extended)
+    app = JarvisApp()
+    app.current_udid = 'UDX'
+    # confirmar diálogo
+    monkeypatch.setattr(main.messagebox, 'askyesno', lambda *a, **k: True)
+    # fake backend ticket + activation
+    monkeypatch.setattr(main.backend, 'request_activation_ticket', lambda udid: '<xml>TICKET</xml>')
+    monkeypatch.setattr(main.backend, 'perform_activation', lambda udid, ticket: 'ACTIVATED')
+    # run synchronous
+    class ImmediateThread:
+        def __init__(self, target, daemon=True):
+            self._t = target
+        def start(self):
+            self._t()
+    monkeypatch.setattr(threading, 'Thread', ImmediateThread)
+    # ensure scheduled callbacks execute synchronously in this test
+    app.after = lambda ms, fn=None: fn()
+    info_called = {}
+    monkeypatch.setattr(main.messagebox, 'showinfo', lambda *a, **k: info_called.update({'info': True}))
+
+    app.activate_device()
+    assert info_called.get('info') is True
+    assert any('Activación completada' in str(x) or 'Ticket guardado' in str(x) for x in app.log_history)
+
+
+def test_save_activation_ticket_only_saves(monkeypatch, tmp_path):
+    monkeypatch.setattr(JarvisApp, '__init__', _fake_init_extended)
+    app = JarvisApp()
+    app.current_udid = 'UDY'
+    # stub backend to return a sample ticket
+    monkeypatch.setattr(main.backend, 'request_activation_ticket', lambda udid: '<xml>SAFE-TICKET</xml>')
+    # run threads synchronously
+    class ImmediateThread:
+        def __init__(self, target, daemon=True):
+            self._t = target
+        def start(self):
+            self._t()
+    monkeypatch.setattr(threading, 'Thread', ImmediateThread)
+    # ensure scheduled callbacks execute synchronously in this test
+    app.after = lambda ms, fn=None: fn()
+    # make logs go to tmp_path by adjusting __file__
+    monkeypatch.setattr(main, '__file__', str(tmp_path / 'main.py'))
+    info_called = {}
+    monkeypatch.setattr(main.messagebox, 'showinfo', lambda *a, **k: info_called.update({'info': True}))
+
+    app.save_activation_ticket()
+
+    logs_dir = tmp_path / 'logs'
+    files = list(logs_dir.glob('activation_ticket_*.xml'))
+    assert files, 'No se creó el ticket'
+    content = files[0].read_text(encoding='utf-8')
+    assert 'SAFE-TICKET' in content
+    assert info_called.get('info') is True
+
+
+def test_open_captive_portal_skips_popup_when_no_tk(monkeypatch):
+    monkeypatch.setattr(JarvisApp, '__init__', _fake_init_extended)
+    app = JarvisApp()
+    # ensure instance looks headless (no .tk attribute)
+    # use __dict__ to avoid triggering tkinter.__getattr__ on the instance
+    if 'tk' in app.__dict__:
+        del app.__dict__['tk']
+    monkeypatch.setattr(JarvisApp, '_get_local_ip', lambda s: '127.0.0.1')
+    monkeypatch.setattr(webbrowser, 'open', lambda *a, **k: None)
+
+    app.open_captive_portal()
+    # should log a warning and not attempt to create widgets (no recursion)
+    assert any('gui no disponible' in str(x).lower() for x in app.log_history)
+    assert not any('maximum recursion' in str(x).lower() for x in app.log_history)

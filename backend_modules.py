@@ -238,6 +238,35 @@ def request_activation_ticket(udid: str):
     return combined
 
 
+def perform_activation(udid: str, ticket_raw: str):
+    """Realiza la activación del dispositivo usando un ticket RAW.
+
+    Escribe el ticket a un archivo temporal y ejecuta:
+      ideviceactivation -u <udid> activate <ticket-file>
+
+    Devuelve la salida del comando si tiene éxito, o lanza RuntimeError si falla.
+    """
+    import tempfile
+    if not ticket_raw:
+        raise ValueError("ticket_raw vacío")
+    # escribir ticket a archivo temporal
+    tf = None
+    try:
+        tf = tempfile.NamedTemporaryFile(delete=False, suffix=".xml")
+        tf.write(ticket_raw.encode("utf-8"))
+        tf.close()
+        cmd = ["ideviceactivation", "-u", udid, "activate", tf.name]
+        out, err, rc = _run_with_retries(cmd, timeout=30, retries=2)
+        if rc == 0:
+            return (out or "")
+        raise RuntimeError(f"ideviceactivation falló: {err or out}")
+    finally:
+        try:
+            if tf:
+                os.unlink(tf.name)
+        except Exception:
+            pass
+
 def get_activation_status(udid: str):
     """Comprueba el estado de activación del dispositivo.
 
