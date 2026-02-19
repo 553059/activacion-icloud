@@ -17,11 +17,11 @@
 			<key>PayloadDisplayName</key>
 			<string>Wi‑Fi — TuRedWiFi</string>
 			<key>PayloadIdentifier</key>
-			<string>com.jarvis.dnsbypass.wifi.43351d26-7d2f-4d35-9edb-2a1e9a2b1e68</string>
+			<string>com.jarvis.dnsbypass.wifi.fa3c2420-a137-4298-b810-e1ce7958c28e</string>
 			<key>PayloadType</key>
 			<string>com.apple.wifi.managed</string>
 			<key>PayloadUUID</key>
-			<string>D4834767-C682-4A0E-A3A2-ECE8ED78D788</string>
+			<string>CBB9E56E-4033-4073-885E-9797EA9F5547</string>
 			<key>PayloadVersion</key>
 			<integer>1</integer>
 			<key>SSID_STR</key>
@@ -31,13 +31,13 @@
 	<key>PayloadDisplayName</key>
 	<string>DNS Bypass Profile</string>
 	<key>PayloadIdentifier</key>
-	<string>com.jarvis.dnsbypass.10aa3511</string>
+	<string>com.jarvis.dnsbypass.100d6f1d</string>
 	<key>PayloadRemovalDisallowed</key>
 	<false/>
 	<key>PayloadType</key>
 	<string>Configuration</string>
 	<key>PayloadUUID</key>
-	<string>10AA3511-B61D-4803-8E77-36ABA1BDC254</string>
+	<string>100D6F1D-546C-4B13-9E61-45BAF838D3BE</string>
 	<key>PayloadVersion</key>
 	<integer>1</integer>
 </dict>

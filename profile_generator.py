@@ -7,6 +7,7 @@ Uso legítimo: automatizar ajustes de red en dispositivos bajo control del usuar
 No debe usarse para evadir mecanismos de seguridad o para actividades ilegales.
 """
 from __future__ import annotations
+import os
 import plistlib
 import uuid
 import ipaddress
