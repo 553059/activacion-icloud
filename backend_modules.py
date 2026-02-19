@@ -237,6 +237,47 @@ def request_activation_ticket(udid: str):
         raise RuntimeError("No se pudo obtener ticket; revisa que 'ideviceactivation' esté instalado y el dispositivo esté emparejado.")
     return combined
 
+
+def get_activation_status(udid: str):
+    """Comprueba el estado de activación del dispositivo.
+
+    Devuelve un dict con keys: activation_state (str|None), activation_lock (bool), raw (str).
+    Usa `ideviceinfo -k ActivationState` y `ideviceactivation activation-info` cuando estén disponibles.
+    """
+    status = {"activation_state": None, "activation_lock": False, "raw": ""}
+    # 1) intentar ideviceinfo -k ActivationState
+    try:
+        out, err, rc = _run_with_retries(["ideviceinfo", "-u", udid, "-k", "ActivationState"], timeout=6)
+        if rc == 0 and out and out.strip():
+            status["activation_state"] = out.strip()
+            status["raw"] += out
+    except FileNotFoundError:
+        pass
+    # 2) intentar ideviceactivation activation-info (más detalles)
+    try:
+        out2, err2, rc2 = _run_with_retries(["ideviceactivation", "-u", udid, "activation-info"], timeout=8)
+        if out2:
+            status["raw"] += "\n" + out2
+            if re.search(r'ActivationLock|activation locked', out2, re.I):
+                status["activation_lock"] = True
+    except FileNotFoundError:
+        pass
+    # 3) fallback: parse ideviceinfo completo
+    try:
+        out3, err3, rc3 = _run_with_retries(["ideviceinfo", "-u", udid], timeout=8)
+        if out3:
+            status["raw"] += "\n" + out3
+            if not status["activation_state"]:
+                m = re.search(r'ActivationState\s*:\s*(\w+)', out3, re.I)
+                if m:
+                    status["activation_state"] = m.group(1)
+            if re.search(r'ActivationLock|activation locked', out3, re.I):
+                status["activation_lock"] = True
+    except FileNotFoundError:
+        pass
+    return status
+
+
 def restart_springboard(udid: str):
     """Pide reinicio del SpringBoard vía idevicediagnostics."""
     cmds = [
