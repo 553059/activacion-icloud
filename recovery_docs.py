@@ -10,7 +10,7 @@ Incluye:
 Uso: generate_recovery_kit(device_info, owner_contact, output_path, format)
 """
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from typing import Optional
 
@@ -56,7 +56,7 @@ def generate_recovery_kit(device_info: dict, requester_name: str, proof_of_purch
 
     Devuelve la ruta al archivo generado.
     """
-    ts = datetime.utcnow().isoformat()[:19].replace("T", " ")
+    ts = datetime.now(timezone.utc).isoformat()[:19].replace("T", " ")
     header = f"# Recovery kit — {device_info.get('model','dispositivo')}\nGenerated: {ts} UTC\n\n"
     meta = (
         f"- Modelo: {device_info.get('model') or '—'}\n"

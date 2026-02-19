@@ -3,6 +3,7 @@ import time
 import sys
 import pytest
 import backend_modules as bm
+import main
 from main import JarvisApp
 
 
@@ -12,7 +13,55 @@ def test_gui_update_device_panel(tmp_path, monkeypatch):
     monkeypatch.setattr(bm, "list_devices", lambda: [])
     monkeypatch.setattr(bm, "get_device_info", lambda udid: {})
 
-    # create app instance (no mainloop)
+    # --- Headless shim: replace JarvisApp.__init__ so no real GUI is created ---
+    class _SimpleLabel:
+        def __init__(self, text=""):
+            self._text = text
+        def configure(self, **kw):
+            if 'text' in kw:
+                self._text = kw['text']
+        def cget(self, key):
+            if key == 'text':
+                return self._text
+            return None
+        def pack(self, *a, **k):
+            pass
+        def grid(self, *a, **k):
+            pass
+
+    class _SimpleTextbox:
+        def __init__(self, text=""):
+            self._buf = text
+            self._state = 'normal'
+        def configure(self, **kw):
+            if 'state' in kw:
+                self._state = kw['state']
+        def delete(self, start, end):
+            self._buf = ''
+        def insert(self, index, text):
+            self._buf += text
+        def get(self, start, end):
+            return self._buf
+
+    class _SimpleConsole(_SimpleTextbox):
+        def see(self, *a, **k):
+            pass
+
+    def _fake_init(self):
+        # minimal attributes used by the test and by methods called (_update_device_ui/export_logs)
+        self.device_info_text = _SimpleLabel("Esperando dispositivo...")
+        self.device_status_label = _SimpleLabel("Ningún dispositivo detectado")
+        self.dashboard_detail = _SimpleTextbox("")
+        self.console = _SimpleConsole()
+        self.log_history = []
+        self.current_udid = None
+
+    # patch the constructor and messagebox dialogs to avoid GUI popups
+    monkeypatch.setattr(JarvisApp, '__init__', _fake_init)
+    monkeypatch.setattr(main.messagebox, 'showinfo', lambda *a, **k: None)
+    monkeypatch.setattr(main.messagebox, 'showwarning', lambda *a, **k: None)
+
+    # create app instance (headless)
     app = JarvisApp()
     try:
         fake_info = {
@@ -42,5 +91,8 @@ def test_gui_update_device_panel(tmp_path, monkeypatch):
         files = sorted([f for f in os.listdir(logs_dir)], reverse=True)
         assert any(f.startswith("jarvis_logs_") for f in files)
     finally:
-        # destroy GUI to free resources
-        app.destroy()
+        # destroy GUI to free resources (no-op for headless shim)
+        try:
+            app.destroy()
+        except Exception:
+            pass

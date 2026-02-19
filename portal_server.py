@@ -9,7 +9,7 @@ Servidor Flask ligero que sirve:
 
 USO RÁPIDO:
   python -m venv .venv
-  .venv\Scripts\activate
+  .venv/Scripts/activate
   pip install -r requirements.txt
   python portal_server.py
 
@@ -198,8 +198,8 @@ def generate_ssl():
             .issuer_name(name)
             .public_key(key.public_key())
             .serial_number(x509.random_serial_number())
-            .not_valid_before(_dt.datetime.utcnow())
-            .not_valid_after(_dt.datetime.utcnow() + _dt.timedelta(days=365))
+            .not_valid_before(_dt.datetime.now(_dt.timezone.utc))
+            .not_valid_after(_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=365))
             .add_extension(san, critical=False)
             .sign(key, hashes.SHA256())
         )

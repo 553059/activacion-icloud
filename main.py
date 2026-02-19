@@ -766,9 +766,6 @@ class JarvisApp(ctk.CTk):
         )
         messagebox.showinfo("Bypass DNS HUD — Instrucciones", txt)
 
-    def show_dns_instructions(self):
-        """Muestra instrucciones de configuración DNS para iPhone (usado en UI)."""
-        messagebox.showinfo("Instrucciones Wi‑Fi / DNS", txt)
 
     def export_logs(self):
         """Exporta el contenido de la consola a `logs/jarvis_logs_YYYYMMDD_HHMMSS.txt` y JSON estructurado."""
