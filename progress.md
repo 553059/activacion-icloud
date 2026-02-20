@@ -26,9 +26,18 @@
 - `.gitignore` — reglas para excluir artefactos/claves privadas
 
 ## Próximos pasos (recomendado)
-1. Ejecutar la prueba desde un iPhone real (guía rápida disponible).  
-2. Subir/crear release (tag) y/o ejecutar job CI para generar instalador.  
-3. Revisar posibles mejoras de seguridad: eliminar cualquier clave ejemplo en `certs/` en el repositorio remoto.
+1. Ejecutar la prueba desde un iPhone real (guía rápida disponible).
+2. Configurar DNS del iPhone para resolver `albert.apple.com` / `gs.apple.com` / `captive.apple.com` hacia la IP de esta máquina — o ejecutar `scripts/dns_server.py` (requiere privilegios para puerto 53).
+3. Verificar instalación y confianza de `server.crt` y `profile_cert.pem` en el dispositivo antes de instalar perfiles firmados.
+4. Crear tag/release y ejecutar job CI para generar instalador (ya hay workflow configurado).
+5. Seguridad: eliminar claves de ejemplo en `certs/` antes de publicar.
+
+## Últimos cambios añadidos (reciente)
+- [✅] Portal Cautivo reescrito (UI iOS‑style, WebSocket → `/ws`).
+- [✅] Enrutamiento de Activación: `scripts/dns_server.py` + captura de payloads en `portal_server.py`.
+- [✅] Firma de perfiles: intento con OpenSSL CLI + `cryptography` PKCS7 fallback.
+- [✅] Headless smoke test y `scripts/verify_setup.py` para CI.
+- Commit reciente: `d49981d50136c3c73528560400a43f52da599c18` (branch: `main`)
 
 ## Instalador generado
 - [✅] Instalador Windows generado/copied: `artifacts/JARVIS_Ultimate_Tool_v1.0_Setup.exe` y copiado al Escritorio (`C:\Users\emili\Desktop\JARVIS_Ultimate_Tool_v1.0_Setup.exe`).
