@@ -245,7 +245,8 @@ class JarvisApp(ctk.CTk):
         qr_frame = ctk.CTkFrame(right, fg_color="#ffffff", corner_radius=16, width=280, height=280)
         qr_frame.pack(pady=(6,12))
         self.qr_label = ctk.CTkLabel(qr_frame, text="", width=260, height=260, corner_radius=12, fg_color="#ffffff")
-        self.qr_label.place(relx=0.5, rely=0.5, anchor='center')
+        # use pack for compatibility with headless test dummy widget
+        self.qr_label.pack(expand=True, padx=10, pady=10)
 
         # Status pills
         self.signing_status_label = ctk.CTkLabel(right, text="Firma: comprobando", fg_color="#08303A", corner_radius=12, width=260, text_color="#d8ffff")
