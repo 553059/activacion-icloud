@@ -42,6 +42,8 @@
 ## Instalador generado
 - [✅] Instalador Windows generado/copied: `artifacts/JARVIS_Ultimate_Tool_v1.0_Setup.exe` y copiado al Escritorio (`C:\Users\emili\Desktop\JARVIS_Ultimate_Tool_v1.0_Setup.exe`).
 - [✅] Instalador ejecutado en modo silencioso y app instalada en `C:\Users\emili\AppData\Local\Programs\Jarvis\main.exe` — verificado que el ejecutable existe.
+- [✅] UI polish aplicado (Dashboard / Intercepción / Server) — colores, espaciamiento y QR container afinados.
+- [✅] Nuevo ejecutable compilado y copiado al Escritorio: `C:\Users\emili\Desktop\ACTIVATOR-TOOL.exe` (también `ACTIVATOR-TOOL-cffe0ad.zip` en el Escritorio).
 
 ---
 **Estado actual:** Finalizado (empaquetado y commit realizado).  
