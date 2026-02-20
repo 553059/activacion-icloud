@@ -29,7 +29,7 @@
 1. Ejecutar la prueba desde un iPhone real (guía rápida disponible).
 2. Configurar DNS del iPhone para resolver `albert.apple.com` / `gs.apple.com` / `captive.apple.com` hacia la IP de esta máquina — o ejecutar `scripts/dns_server.py` (requiere privilegios para puerto 53).
 3. Verificar instalación y confianza de `server.crt` y `profile_cert.pem` en el dispositivo antes de instalar perfiles firmados.
-4. Crear tag/release y ejecutar job CI para generar instalador (ya hay workflow configurado).
+4. Tag y borrador de release: **tag `v1.0-intercept` creado y empujado**; borrador de release preparado en `RELEASE_DRAFT.md` (adjuntar artefactos vía GitHub UI o `gh` CLI si se desea automatizar).
 5. Seguridad: eliminar claves de ejemplo en `certs/` antes de publicar.
 
 ## Últimos cambios añadidos (reciente)
