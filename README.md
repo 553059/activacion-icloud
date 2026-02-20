@@ -5,6 +5,7 @@ Herramienta de escritorio (Python) para diagnóstico y utilidades iOS — UI mod
 ## Requisitos
 - Python 3.10+
 - libimobiledevice (idevice_id, ideviceinfo, idevicecrashreport, ideviceactivation, idevicediagnostics) en PATH
+- OpenSSL CLI (recomendado) — necesaria para firmar `mobileconfig` con la utilidad `openssl`. El proyecto tiene un *fallback* que usa `cryptography` cuando `openssl` no está disponible, pero para interoperabilidad y verificación en dispositivos reales se recomienda instalar el binario.
 - Windows: ejecuta la app con permisos de administrador si el dispositivo no aparece
 
 ## Instalación rápida
@@ -78,4 +79,19 @@ Consejos:
 - Ejecutar tests localmente: `python -m pytest -q`.
 - La suite incluye parsers, mocks y un test de humo de GUI. El test de GUI se omite automáticamente en CI headless.
 - CI: hay un workflow de GitHub Actions en `.github/workflows/ci.yml` que ejecuta los tests en cada push/PR (Windows + Ubuntu, Python 3.10/3.11).
+
+### OpenSSL & profile signing
+- Recomendado: instala el binario `openssl` en tu sistema para poder generar y verificar perfiles `.mobileconfig` firmados con la utilidad `openssl`.
+  - Windows: instala el instalador **Win64 OpenSSL** o usa Chocolatey: `choco install openssl.light`
+  - macOS / Linux: `brew install openssl` / `sudo apt install openssl`
+- El servidor local (`portal_server.py`) intentará usar `openssl` cuando `sign=1` en `/profile.mobileconfig`. Si no detecta `openssl`, el proyecto ofrece un **fallback** que usa `cryptography` para firmar archivos (no requiere el CLI), de forma que la funcionalidad de firma sigue disponible en entornos sin `openssl`.
+
+### Verificación automática (`scripts/verify_setup.py`)
+- Hay un script de comprobación automática: `scripts/verify_setup.py` — valida imports, arranca el portal, prueba endpoints (profile/mobileconfig, qr, recovery-kit) y ejecuta un headless smoke.
+- Úsalo localmente: `python scripts/verify_setup.py --run-tests`.
+- El script también comprueba si `openssl` está disponible y reporta warnings si no lo está.
+
+### CI: verificación en PRs
+- He añadido un job (GitHub Actions) que ejecuta `scripts/verify_setup.py` en cada PR para garantizar que el servidor y endpoints principales funcionan en Ubuntu/Windows. Ver `.github/workflows/verify-setup.yml`.
+
 

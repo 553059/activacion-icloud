@@ -36,13 +36,62 @@ def test_add_wifi_payload_and_as_bytes_contains_fields(tmp_path):
         _ = plistlib.loads(fh.read())
 
 
-def test_sign_profile_with_openssl_failure(monkeypatch):
+def test_sign_profile_with_openssl_openssl_fails_but_fallback_works(monkeypatch, tmp_path):
+    """Si OpenSSL falla en la llamada externa, debe usarse el fallback con `cryptography`.
+
+    Simulamos fallo en subprocess.run y comprobamos que la llamada devuelve bytes (fallback activo).
+    """
     # simulate openssl failing
     monkeypatch.setattr(subprocess, 'run', lambda *a, **k: subprocess.CompletedProcess(args=[], returncode=1, stderr=b'bad'))
+
+    # create a real cert/key pair so fallback can sign
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives import serialization, hashes
+    from cryptography.x509 import NameOID
+    from cryptography import x509
+    import datetime
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'Test')])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime.utcnow() - datetime.timedelta(days=1))
+        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=365))
+        .sign(key, hashes.SHA256())
+    )
+
+    cert_path = tmp_path / 'cert.pem'
+    key_path = tmp_path / 'key.pem'
+    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption()
+    ))
+
+    signed = pg.sign_profile_with_openssl(b'ABC', str(cert_path), str(key_path))
+    assert isinstance(signed, (bytes, bytearray)) and len(signed) > 0
+
+
+def test_sign_profile_with_openssl_no_fallback_raises(monkeypatch):
+    """Si OpenSSL falla y no hay cryptography, debe lanzarse RuntimeError."""
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **k: subprocess.CompletedProcess(args=[], returncode=1, stderr=b'bad'))
+    # simulate cryptography missing
+    import sys
+    monkeypatch.setitem(sys.modules, 'cryptography', None)
     try:
-        pg.sign_profile_with_openssl(b'abc', 'cert.pem', 'key.pem')
-        raise AssertionError("Expected RuntimeError when OpenSSL fails")
-    except RuntimeError:
+        import profile_generator as pg2
+        try:
+            pg2.sign_profile_with_openssl(b'abc', 'cert.pem', 'key.pem')
+            raise AssertionError('Expected RuntimeError when no fallback available')
+        except RuntimeError:
+            pass
+    finally:
+        # restore possible side-effects (monkeypatch handles sys.modules restore automatically)
         pass
 
 

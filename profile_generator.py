@@ -100,10 +100,12 @@ import subprocess
 import tempfile
 
 def sign_profile_with_openssl(profile_bytes: bytes, certfile: str, keyfile: str) -> bytes:
-    """Firma un .mobileconfig usando OpenSSL CMS/SMIME y devuelve bytes firmados (DER).
+    """Firma un .mobileconfig. Intentará usar la utilidad `openssl` si está disponible;
+    si no, hará un fallback usando la librería `cryptography` (PKCS7/CMS) cuando sea posible.
 
-    Requisitos: `openssl` disponible en PATH y certificados PEM válidos.
+    Devuelve los bytes firmados en formato DER. Lanza RuntimeError si no puede firmar.
     """
+    # 1) intento con OpenSSL CLI (si está en PATH)
     with tempfile.TemporaryDirectory() as td:
         in_path = os.path.join(td, 'profile.mobileconfig')
         out_path = os.path.join(td, 'profile.signed')
@@ -114,11 +116,40 @@ def sign_profile_with_openssl(profile_bytes: bytes, certfile: str, keyfile: str)
             '-signer', certfile, '-inkey', keyfile,
             '-outform', 'DER', '-nodetach', '-binary', '-out', out_path
         ]
-        proc = subprocess.run(cmd, capture_output=True)
-        if proc.returncode != 0:
-            raise RuntimeError(f"OpenSSL failed: {proc.stderr.decode(errors='ignore')}")
-        with open(out_path, 'rb') as fh:
-            return fh.read()
+        try:
+            proc = subprocess.run(cmd, capture_output=True)
+            if proc.returncode == 0:
+                with open(out_path, 'rb') as fh:
+                    return fh.read()
+            # if openssl failed, fall through to try cryptography fallback
+        except FileNotFoundError:
+            # openssl not present on PATH; we'll attempt cryptography fallback below
+            pass
+
+    # 2) fallback: usar `cryptography` para construir un PKCS7/CMS firmado en DER
+    try:
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.serialization import pkcs7
+        from cryptography.hazmat.primitives.serialization import load_pem_private_key
+        from cryptography.x509 import load_pem_x509_certificate
+    except Exception as e:
+        raise RuntimeError(f"OpenSSL not available and cryptography fallback not installable: {e}")
+
+    # cargar cert/key desde PEM
+    try:
+        with open(certfile, 'rb') as cf:
+            cert = load_pem_x509_certificate(cf.read())
+        with open(keyfile, 'rb') as kf:
+            key = load_pem_private_key(kf.read(), password=None)
+    except Exception as e:
+        raise RuntimeError(f"Failed to load cert/key for cryptography fallback: {e}")
+
+    try:
+        builder = pkcs7.PKCS7SignatureBuilder().set_data(profile_bytes).add_signer(cert, key, hashes.SHA256())
+        der = builder.sign(serialization.Encoding.DER, [])
+        return der
+    except Exception as e:
+        raise RuntimeError(f"Signing failed (cryptography fallback): {e}")
 
 
 def verify_signed_profile_with_openssl(signed_bytes: bytes, ca_certfile: str) -> bool:
