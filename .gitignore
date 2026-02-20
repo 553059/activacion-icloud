@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+build/
+dist/
+installer/Output/
+installer/jarvis_portable.zip
+logs/
+artifacts/
+*.log
+*.zip
+*.exe
+certs/*.key
+certs/*.pem
+# keep server.crt (if you need to distribute) but avoid tracking private keys
+!.gitignore

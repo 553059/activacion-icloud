@@ -1,0 +1,23 @@
+[run]
+omit =
+    compile_inno.py
+    copy_installer.py
+    copy_installer_v101.py
+    create_silent_shortcut.py
+    find_iscc.py
+    generate_icon.py
+    install_portable.py
+    smoke_check.py
+    temp_download.py
+    update_portable_zip.py
+    installer/*
+    build/*
+    dist/*
+    .venv/*
+    scripts/*
+
+[report]
+exclude_lines =
+    # Don't complain about missing debug-only code
+    if __name__ == .__main__.:
+    pragma: no cover

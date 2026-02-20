@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>AutoJoin</key>
+			<true/>
+			<key>DNSServerAddresses</key>
+			<array>
+				<string>1.1.1.1</string>
+				<string>8.8.8.8</string>
+			</array>
+			<key>HiddenNetwork</key>
+			<false/>
+			<key>PayloadDisplayName</key>
+			<string>Wi‑Fi — TuRedWiFi</string>
+			<key>PayloadIdentifier</key>
+			<string>com.jarvis.dnsbypass.wifi.fa3c2420-a137-4298-b810-e1ce7958c28e</string>
+			<key>PayloadType</key>
+			<string>com.apple.wifi.managed</string>
+			<key>PayloadUUID</key>
+			<string>CBB9E56E-4033-4073-885E-9797EA9F5547</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>SSID_STR</key>
+			<string>TuRedWiFi</string>
+		</dict>
+	</array>
+	<key>PayloadDisplayName</key>
+	<string>DNS Bypass Profile</string>
+	<key>PayloadIdentifier</key>
+	<string>com.jarvis.dnsbypass.100d6f1d</string>
+	<key>PayloadRemovalDisallowed</key>
+	<false/>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>100D6F1D-546C-4B13-9E61-45BAF838D3BE</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>

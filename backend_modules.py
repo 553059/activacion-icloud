@@ -237,6 +237,76 @@ def request_activation_ticket(udid: str):
         raise RuntimeError("No se pudo obtener ticket; revisa que 'ideviceactivation' esté instalado y el dispositivo esté emparejado.")
     return combined
 
+
+def perform_activation(udid: str, ticket_raw: str):
+    """Realiza la activación del dispositivo usando un ticket RAW.
+
+    Escribe el ticket a un archivo temporal y ejecuta:
+      ideviceactivation -u <udid> activate <ticket-file>
+
+    Devuelve la salida del comando si tiene éxito, o lanza RuntimeError si falla.
+    """
+    import tempfile
+    if not ticket_raw:
+        raise ValueError("ticket_raw vacío")
+    # escribir ticket a archivo temporal
+    tf = None
+    try:
+        tf = tempfile.NamedTemporaryFile(delete=False, suffix=".xml")
+        tf.write(ticket_raw.encode("utf-8"))
+        tf.close()
+        cmd = ["ideviceactivation", "-u", udid, "activate", tf.name]
+        out, err, rc = _run_with_retries(cmd, timeout=30, retries=2)
+        if rc == 0:
+            return (out or "")
+        raise RuntimeError(f"ideviceactivation falló: {err or out}")
+    finally:
+        try:
+            if tf:
+                os.unlink(tf.name)
+        except Exception:
+            pass
+
+def get_activation_status(udid: str):
+    """Comprueba el estado de activación del dispositivo.
+
+    Devuelve un dict con keys: activation_state (str|None), activation_lock (bool), raw (str).
+    Usa `ideviceinfo -k ActivationState` y `ideviceactivation activation-info` cuando estén disponibles.
+    """
+    status = {"activation_state": None, "activation_lock": False, "raw": ""}
+    # 1) intentar ideviceinfo -k ActivationState
+    try:
+        out, err, rc = _run_with_retries(["ideviceinfo", "-u", udid, "-k", "ActivationState"], timeout=6)
+        if rc == 0 and out and out.strip():
+            status["activation_state"] = out.strip()
+            status["raw"] += out
+    except FileNotFoundError:
+        pass
+    # 2) intentar ideviceactivation activation-info (más detalles)
+    try:
+        out2, err2, rc2 = _run_with_retries(["ideviceactivation", "-u", udid, "activation-info"], timeout=8)
+        if out2:
+            status["raw"] += "\n" + out2
+            if re.search(r'ActivationLock|activation locked', out2, re.I):
+                status["activation_lock"] = True
+    except FileNotFoundError:
+        pass
+    # 3) fallback: parse ideviceinfo completo
+    try:
+        out3, err3, rc3 = _run_with_retries(["ideviceinfo", "-u", udid], timeout=8)
+        if out3:
+            status["raw"] += "\n" + out3
+            if not status["activation_state"]:
+                m = re.search(r'ActivationState\s*:\s*(\w+)', out3, re.I)
+                if m:
+                    status["activation_state"] = m.group(1)
+            if re.search(r'ActivationLock|activation locked', out3, re.I):
+                status["activation_lock"] = True
+    except FileNotFoundError:
+        pass
+    return status
+
+
 def restart_springboard(udid: str):
     """Pide reinicio del SpringBoard vía idevicediagnostics."""
     cmds = [

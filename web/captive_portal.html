@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Portal Cautivo — Jarvis</title>
+  <style>
+    body{font-family:Inter,Arial,Helvetica,sans-serif;background:#f6fbfb;color:#17373a;margin:0}
+    .card{max-width:520px;margin:28px auto;background:#fff;border-radius:12px;padding:20px;box-shadow:0 6px 24px rgba(2,48,52,.08)}
+    h1{color:#007a7a;margin:0 0 8px}
+    p.lead{color:#285454}
+    .btn{display:inline-block;padding:10px 14px;border-radius:8px;background:#007ACC;color:#fff;text-decoration:none;margin:8px 4px}
+    .qr{display:block;margin:18px auto;width:220px;height:220px;border-radius:8px;border:1px solid #eee}
+    .note{font-size:0.95rem;color:#5b6b6b;margin-top:12px}
+    .steps{background:#f2fcfc;border-left:4px solid #007a7a;padding:12px;border-radius:6px}
+    label{display:block;margin-top:8px}
+    input[type=text]{width:100%;padding:8px;margin-top:6px;border:1px solid #ddd;border-radius:6px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Portal Cautivo — Jarvis</h1>
+    <p class="lead">Usa esta página para instalar un perfil de red (DNS) y continuar con el diagnóstico del dispositivo.</p>
+
+    <div class="steps">
+      <strong>Instrucciones rápidas</strong>
+      <ol>
+        <li>Si estás en la pantalla cautiva escribe la URL completa arriba (campo "Go to...").</li>
+        <li>Pulsa <b>Descargar perfil</b> e instala el perfil desde Safari → Ajustes.</li>
+        <li>Si el webview permite, pulsa <b>Abrir en Safari</b> para cambiar al navegador nativo.</li>
+      </ol>
+    </div>
+
+    <div style="margin-top:12px">
+      <label>SSID (opcional)</label>
+      <input id="ssid" type="text" placeholder="TuRedWiFi" />
+      <label>DNS (coma-separado)</label>
+      <input id="dns" type="text" placeholder="1.1.1.1,8.8.8.8" />
+      <div style="margin-top:10px">
+        <a id="dlprofile" class="btn" href="#">Descargar perfil (.mobileconfig)</a>
+        <a id="openSafari" class="btn" href="#">Abrir en Safari</a>
+        <a id="dlcert" class="btn" href="#">Descargar certificado (para iOS)</a>
+        <a id="genRecovery" class="btn" href="#">Generar Recovery (PDF)</a>
+      </div>
+      <div style="margin-top:10px; display:flex; align-items:center; gap:10px;">
+        <input id="signToggle" type="checkbox" /> <label for="signToggle">Firmar perfiles (server-side)</label>
+        <small id="signingHint" style="color:#666">(comprobando disponibilidad...)</small>
+      </div>
+    </div>
+
+    <img id="qrimg" class="qr" alt="QR - escanéalo con otro dispositivo"/>
+
+    <div class="note">Si el iPhone está en la pantalla de bienvenida (Hola) usa el campo <b>Go to...</b> del portal cautivo y escribe la URL completa mostrada arriba. Si instalas el certificado, recuerda activar la confianza en Ajustes → General → Información → Ajustes de confianza de certificados.</div>
+  </div>
+
+  <script>
+    function buildUrl(){
+      const ssid = document.getElementById('ssid').value || 'TuRedWiFi';
+      const dns = document.getElementById('dns').value || '1.1.1.1';
+      const base = location.origin; // espera servidor local
+      return `${base}/profile.mobileconfig?ssid=${encodeURIComponent(ssid)}&dns=${encodeURIComponent(dns)}`;
+    }
+    function refreshQr(){
+      const u = location.href;
+      document.getElementById('qrimg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(u);
+    }
+    document.getElementById('dlprofile').addEventListener('click', function(e){
+      e.preventDefault();
+      const ssid = document.getElementById('ssid').value || 'TuRedWiFi';
+      const dns = document.getElementById('dns').value || '1.1.1.1';
+      let url = `/profile.mobileconfig?ssid=${encodeURIComponent(ssid)}&dns=${encodeURIComponent(dns)}`;
+      const signChecked = document.getElementById('signToggle').checked;
+      if(signChecked) url += '&sign=1';
+      // abrir en nueva ventana para que Safari permita instalar
+      window.open(url, '_blank');
+    });
+    document.getElementById('openSafari').addEventListener('click', function(e){
+      e.preventDefault();
+      // forzar salida del captive webview (si procede)
+      try{ window.top.location.href = window.location.href; }catch(e){ window.location.href = window.location.href; }
+    });
+
+    document.getElementById('dlcert').addEventListener('click', function(e){
+      e.preventDefault();
+      // descarga el certificado del servidor (server.crt)
+      window.open('/certs/server.crt', '_blank');
+    });
+
+    // signing toggle: consulta estado y cambia el comportamiento server-side
+    async function refreshSigningStatus(){
+      try{
+        const r = await fetch('/signing-status');
+        if(!r.ok) throw new Error('no status');
+        const j = await r.json();
+        const cb = document.getElementById('signToggle');
+        cb.checked = !!j.enabled;
+        cb.disabled = !j.available;
+        document.getElementById('signingHint').innerText = j.available ? (j.enabled ? 'Firmado por defecto' : 'Disponible — no firmado por defecto') : 'Firma no disponible en el servidor';
+      }catch(err){
+        document.getElementById('signingHint').innerText = 'Error verificando estado';
+      }
+    }
+    document.getElementById('signToggle').addEventListener('change', async function(e){
+      const val = e.target.checked;
+      try{
+        const r = await fetch('/set-signing', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({enabled: val}) });
+        const j = await r.json();
+        if(!j.ok) throw new Error(j.error || 'failed');
+        refreshSigningStatus();
+      }catch(err){
+        alert('No se pudo cambiar la configuración de firma del servidor: ' + err.message);
+        refreshSigningStatus();
+      }
+    });
+    refreshSigningStatus();
+
+    document.getElementById('genRecovery').addEventListener('click', async function(e){
+      e.preventDefault();
+      const device = {
+        model: prompt('Modelo (ej. iPhone X)', ''),
+        serial: prompt('Número de serie', ''),
+        udid: prompt('UDID (opcional)', ''),
+        imei: prompt('IMEI (opcional)', ''),
+        ios_version: prompt('iOS version (opcional)', '')
+      };
+      if(!device.serial && !device.udid){
+        alert('Introduce al menos el número de serie o UDID para generar el Recovery Kit.');
+        return;
+      }
+      const payload = { device: device, requester: 'Soporte', format: 'pdf' };
+      try{
+        const resp = await fetch('/recovery-kit', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        if(!resp.ok) throw new Error('error al generar');
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `recovery_kit_${device.serial || device.udid}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      }catch(err){
+        alert('No se pudo generar el Recovery Kit: ' + err.message);
+      }
+    });
+
+    refreshQr();
+  </script>
+</body>
+</html>

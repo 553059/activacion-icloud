@@ -3,6 +3,9 @@ import threading
 import queue
 import time
 import os
+import socket
+import webbrowser
+import urllib.parse
 import tkinter as tk
 from tkinter import messagebox, scrolledtext, filedialog
 import customtkinter as ctk
@@ -53,11 +56,17 @@ class JarvisApp(ctk.CTk):
         # Start polling devices and log queue processor
         self.after(500, self.poll_device)
         self.after(100, self._process_log_queue)
+        # refresh server signing status shortly after startup
+        try:
+            self.after(1500, self.refresh_server_signing_status)
+        except Exception:
+            pass
 
     def _add_sidebar_buttons(self, parent):
         ctk.CTkLabel(parent, text="JARVIS ING", font=ctk.CTkFont(size=18, weight="bold"), text_color="#00E6E6").pack(pady=(18,8))
         nav = [
             ("Inicio", self.show_dashboard),
+            ("Launcher", lambda: self.show_frame("launcher")),
             ("Diagnóstico", lambda: self.show_frame("diagnostic")),
             ("Pánicos", lambda: self.show_frame("panics")),
             ("Servidor", lambda: self.show_frame("server")),
@@ -73,10 +82,57 @@ class JarvisApp(ctk.CTk):
         self.frames["dashboard"] = f
         self._populate_dashboard(f)
 
+        # Launcher (accesos rápidos)
+        f_launcher = ctk.CTkFrame(self.main_frame)
+        self.frames["launcher"] = f_launcher
+        self._populate_launcher(f_launcher)
+
         # Diagnostic / Owner Intel
         f2 = ctk.CTkFrame(self.main_frame)
         self.frames["diagnostic"] = f2
         self._populate_diagnostic(f2)
+    def _populate_launcher(self, parent):
+        ctk.CTkLabel(parent, text="Launcher — Accesos rápidos iPhone", font=ctk.CTkFont(size=16, weight="bold"), text_color="#00E6E6").pack(anchor="nw", padx=12, pady=8)
+        ctk.CTkLabel(parent, text="Accesos útiles para configuración y diagnóstico de iPhone conectado:", font=ctk.CTkFont(size=12)).pack(anchor="nw", padx=12, pady=(0,8))
+
+        # Botón para mostrar instrucciones de Wi-Fi/DNS
+        ctk.CTkButton(parent, text="Instrucciones Wi-Fi / DNS Bypass", fg_color="#008080", width=260, command=self.show_dns_instructions).pack(padx=12, pady=8)
+
+        # Botón para reiniciar SpringBoard
+        ctk.CTkButton(parent, text="Reiniciar SpringBoard", fg_color="#005B5B", width=260, command=self.restart_springboard).pack(padx=12, pady=8)
+
+        # Botón para abrir panel de información del dispositivo
+        ctk.CTkButton(parent, text="Ver información del dispositivo", fg_color="#0066CC", width=260, command=self.show_dashboard).pack(padx=12, pady=8)
+
+        # Botón para comprobar estado de activación (Activation Lock / ActivationState)
+        ctk.CTkButton(parent, text="Comprobar estado de activación", fg_color="#FF8C00", width=260, command=self.check_activation_status).pack(padx=12, pady=8)
+
+        # Botón para abrir el portal cautivo en el navegador y copiar URL / mostrar QR
+        ctk.CTkButton(parent, text="Abrir portal / Mostrar QR", fg_color="#007ACC", width=260, command=self.open_captive_portal).pack(padx=12, pady=8)
+
+        # Botón para generar Recovery Kit (PDF) desde la app
+        ctk.CTkButton(parent, text="Generar Recovery PDF", fg_color="#7046FF", width=260, command=self.generate_recovery_pdf).pack(padx=12, pady=8)
+
+        # Toggle: Firmar perfiles server-side
+        self.server_signing_var = tk.BooleanVar(value=False)
+        ctk.CTkCheckBox(parent, text="Firmar perfiles (server-side)", variable=self.server_signing_var, command=self.toggle_server_profile_signing).pack(padx=12, pady=(6,8))
+
+        # Botón para habilitar HTTPS en el portal (regenerar certificados + reload)
+        ctk.CTkButton(parent, text="Habilitar HTTPS (portal)", fg_color="#208020", width=260, command=self.enable_https_on_portal).pack(padx=12, pady=8)
+
+        # Botón para descargar certificado del portal y guía de instalación
+        ctk.CTkButton(parent, text="Descargar certificado / Guía", fg_color="#0066CC", width=260, command=self.show_install_guide).pack(padx=12, pady=8)
+
+        # Botón para intentar crear un hotspot Windows y forzar captive (requiere admin)
+        ctk.CTkButton(parent, text="Forzar Captive (Hotspot)", fg_color="#CC3300", width=260, command=self.toggle_hotspot).pack(padx=12, pady=8)
+
+        # Instrucciones visuales
+        txt = (
+            "\n\u2022 Para acceder a Configuración Wi-Fi en el iPhone: Ajustes > Wi-Fi > (i) en la red\n"
+            "\u2022 Para cambiar DNS: Configuración Wi-Fi > (i) > Configurar DNS > Manual\n"
+            "\u2022 Si necesitas más ayuda, consulta la pestaña Diagnóstico o Dashboard.\n"
+        )
+        ctk.CTkLabel(parent, text=txt, font=ctk.CTkFont(size=11), justify="left").pack(anchor="nw", padx=16, pady=(12,4))
 
         # Panics
         f3 = ctk.CTkFrame(self.main_frame)
@@ -166,6 +222,8 @@ class JarvisApp(ctk.CTk):
     def _populate_server(self, parent):
         ctk.CTkLabel(parent, text="Server Interceptor", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="nw", padx=12, pady=8)
         ctk.CTkButton(parent, text="Solicitar Ticket de Activación", command=self.request_activation_ticket, fg_color="#0066CC", width=280).pack(padx=12, pady=10)
+        # Nuevo: botón para intentar activar el dispositivo usando el ticket (confirmación requerida)
+        ctk.CTkButton(parent, text="Activar dispositivo", command=self.activate_device, fg_color="#20A020", width=280).pack(padx=12, pady=(0,10))
         self.server_text = ctk.CTkTextbox(parent, height=420)
         self.server_text.pack(fill="both", expand=True, padx=12, pady=8)
         self.server_text.configure(state="disabled")
@@ -446,6 +504,336 @@ class JarvisApp(ctk.CTk):
                 self.log(f"[ERROR] restart_springboard: {e}")
         threading.Thread(target=task, daemon=True).start()
 
+    def check_activation_status(self):
+        """Comprueba el estado de activación / Activation Lock del dispositivo conectado."""
+        udid = self.current_udid
+        if not udid:
+            messagebox.showwarning("No device", "Conecta un dispositivo por USB primero.")
+            return
+
+        def task():
+            self.log("Comprobando estado de activación...")
+            try:
+                res = backend.get_activation_status(udid)
+                state = res.get("activation_state") or "Desconocido"
+                alock = bool(res.get("activation_lock"))
+                out = f"Estado: {state}\nActivation Lock detectado: {'Sí' if alock else 'No'}\n\nRAW:\n{(res.get('raw') or '')[:2000]}"
+                self.after(0, lambda: messagebox.showinfo("Estado de activación", out))
+                try:
+                    self.log_structured("Activation status", {"state": state, "activation_lock": alock, "raw_snippet": (res.get('raw') or '')[:800]}, level="INFO", category="DEVICE")
+                except Exception:
+                    pass
+            except Exception as e:
+                self.log(f"[ERROR] check_activation_status: {e}")
+        threading.Thread(target=task, daemon=True).start()
+
+    def _get_local_ip(self):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except Exception:
+            return None
+
+    def activate_device(self):
+        """Solicita ticket de activación y, previo confirmación, intenta activar el dispositivo conectado.
+
+        La activación se ejecuta en un hilo fondo; los fallos se registran en la consola y se muestran mensajes modales.
+        """
+        if not self.current_udid:
+            messagebox.showwarning("No device", "Conecta un dispositivo por USB primero.")
+            return
+        # pedir confirmación explicita
+        if not messagebox.askyesno("Activar dispositivo", "Esto ejecutará la activación en el dispositivo conectado. ¿Deseas continuar?"):
+            return
+
+        def task():
+            udid = self.current_udid
+            try:
+                self.log("Solicitando ticket de activación (raw) para activación...")
+                raw = backend.request_activation_ticket(udid)
+                # guardar ticket en logs para referencia / auditoría
+                logs_dir = os.path.join(os.path.dirname(__file__), "logs")
+                os.makedirs(logs_dir, exist_ok=True)
+                ticket_path = os.path.join(logs_dir, f"activation_ticket_{udid}.xml")
+                with open(ticket_path, "w", encoding="utf-8") as fh:
+                    fh.write(raw)
+                self.log(f"Ticket guardado en: {ticket_path}")
+
+                # ejecutar activación usando backend.perform_activation (si falla, se captura)
+                self.log("Ejecutando activación en el dispositivo...")
+                try:
+                    out = backend.perform_activation(udid, raw)
+                    self.log("Activación completada. Output:\n" + (out or "sin salida"))
+                    self.after(0, lambda: messagebox.showinfo("Activación", "Activación completada. Consulta logs para detalles."))
+                except Exception as e:
+                    self.log(f"[ERROR] activate_device: {e}")
+                    self.after(0, lambda: messagebox.showerror("Activación", f"Fallo en activación: {e}"))
+            except Exception as e:
+                self.log(f"[ERROR] activate_device: {e}")
+        threading.Thread(target=task, daemon=True).start()
+
+    def save_activation_ticket(self):
+        """Modo manual: solicita el ticket y lo guarda en `logs/activation_ticket_<UDID>.xml` sin ejecutar la activación."""
+        udid = self.current_udid
+        if not udid:
+            messagebox.showwarning("No device", "Conecta un dispositivo por USB primero.")
+            return
+
+        def task():
+            try:
+                self.log("Solicitando ticket de activación (raw) — modo manual (solo guardar)...")
+                raw = backend.request_activation_ticket(udid)
+                logs_dir = os.path.join(os.path.dirname(__file__), "logs")
+                os.makedirs(logs_dir, exist_ok=True)
+                ticket_path = os.path.join(logs_dir, f"activation_ticket_{udid}.xml")
+                with open(ticket_path, "w", encoding="utf-8") as fh:
+                    fh.write(raw)
+                self.log(f"Ticket guardado en: {ticket_path}")
+                try:
+                    self.log_structured("Activation ticket saved", {"udid": udid, "path": ticket_path}, level="INFO", category="SERVER")
+                except Exception:
+                    pass
+                self.after(0, lambda: messagebox.showinfo("Ticket guardado", f"Ticket guardado en:\n{ticket_path}"))
+            except Exception as e:
+                self.log(f"[ERROR] save_activation_ticket: {e}")
+                self.after(0, lambda: messagebox.showerror("Ticket", f"No se pudo obtener el ticket: {e}"))
+        threading.Thread(target=task, daemon=True).start()
+
+    def open_captive_portal(self):
+        ip = self._get_local_ip()
+        if not ip:
+            messagebox.showerror("No IP", "No se pudo determinar la IP local. Asegúrate de estar en la misma red Wi‑Fi.")
+            return
+        url_http = f"http://{ip}:5000/"
+        url_https = f"https://{ip}:5000/"
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(url_https)
+        except Exception:
+            pass
+        try:
+            webbrowser.open(url_http)
+        except Exception:
+            pass
+
+        # Si no hay GUI inicializada (p. ej. entornos headless/tests) no intentamos crear el popup
+        # check instance __dict__ to avoid invoking tkinter's descriptor __getattr__
+        if not self.__dict__.get('tk'):
+            self.log("[WARN] open_captive_portal: GUI no disponible, omitiendo popup")
+            return
+
+        # popup con instrucciones y enlace al QR
+        try:
+            popup = ctk.CTkToplevel(self)
+            popup.title("Abrir portal en iPhone / QR")
+            popup.geometry("480x360")
+            ctk.CTkLabel(popup, text="URL copiada al portapapeles. Abre Safari en tu iPhone o escanea el QR.", wraplength=440).pack(padx=12, pady=(12,8))
+            ctk.CTkLabel(popup, text=url_https, text_color="#00A2E6", wraplength=440).pack(padx=12, pady=(0,8))
+            def open_qr():
+                qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + urllib.parse.quote_plus(url_https)
+                try:
+                    webbrowser.open(qr_url)
+                except Exception:
+                    pass
+            ctk.CTkButton(popup, text="Abrir QR en navegador", command=open_qr, fg_color="#007ACC").pack(pady=(8,6), padx=12)
+            # botón rápido para generar Recovery PDF desde la app
+            ctk.CTkButton(popup, text="Generar Recovery PDF (desde servidor)", command=lambda: webbrowser.open(url_http + 'recovery-kit'), fg_color="#7046FF").pack(pady=(6,6))
+            ctk.CTkButton(popup, text="Guardar ticket (modo manual)", command=self.save_activation_ticket, fg_color="#20A020").pack(pady=(6,6))
+            ctk.CTkButton(popup, text="Descargar certificado (server.crt)", command=lambda: webbrowser.open(url_http + 'certs/server.crt'), fg_color="#0066CC").pack(pady=(6,6))
+            ctk.CTkButton(popup, text="Cerrar", command=popup.destroy, fg_color="#005B5B").pack(pady=(6,12))
+        except Exception as e:
+            # Guardar el error en el log para entornos headless o cuando la creación del popup falle
+            self.log(f"[ERROR] open_captive_portal: {e}")
+
+    def generate_recovery_pdf(self):
+        # diálogo simple para solicitar datos y generar el PDF localmente
+
+        # diálogo simple para solicitar datos y generar el PDF localmente
+        try:
+            import tkinter.simpledialog as simpledialog
+        except Exception:
+            simpledialog = tk
+        model = simpledialog.askstring('Recovery kit', 'Modelo (ej. iPhone X):')
+        serial = simpledialog.askstring('Recovery kit', 'Número de serie:')
+        udid = simpledialog.askstring('Recovery kit', 'UDID (opcional):')
+        imei = simpledialog.askstring('Recovery kit', 'IMEI (opcional):')
+        ios = simpledialog.askstring('Recovery kit', 'iOS version (opcional):')
+        if not serial and not udid:
+            messagebox.showwarning('Recovery kit', 'Introduce al menos el número de serie o UDID.')
+            return
+        device = {'model': model or '', 'serial': serial or '', 'udid': udid or '', 'imei': imei or '', 'ios_version': ios or ''}
+        try:
+            import recovery_docs
+            out = recovery_docs.generate_recovery_kit(device, requester_name='Soporte', out_path=f'recovery_kit_{serial or udid}.pdf', fmt='pdf')
+        except Exception as e:
+            # fallback a md si reportlab no está disponible
+            try:
+                import recovery_docs
+                out = recovery_docs.generate_recovery_kit(device, requester_name='Soporte', out_path=f'recovery_kit_{serial or udid}.md', fmt='md')
+            except Exception as e2:
+                messagebox.showerror('Recovery kit', f'Error generando recovery kit: {e} / {e2}')
+                return
+        messagebox.showinfo('Recovery kit', f'Recovery kit generado: {out}')
+        try:
+            os.startfile(out)
+        except Exception:
+            pass
+
+        # Intentar subir el recovery al portal (si está activo en esta máquina)
+        try:
+            import requests
+            ip = self._get_local_ip()
+            if ip:
+                # prefer https if available
+                for scheme in ('https', 'http'):
+                    url = f"{scheme}://{ip}:5000/upload-recovery"
+                    try:
+                        with open(out, 'rb') as fh:
+                            r = requests.post(url, files={'file': (os.path.basename(out), fh)}, timeout=6, verify=False)
+                        if r.ok:
+                            data = r.json()
+                            if data.get('ok') and data.get('url'):
+                                messagebox.showinfo('Recovery uploaded', f'Recovery subido y disponible en:\n{data.get("url")}')
+                                break
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+    def toggle_server_profile_signing(self):
+        """Toggle the server-side signing default via the portal's API."""
+        try:
+            import requests
+        except Exception:
+            messagebox.showerror('Signing', 'La librería requests no está disponible.')
+            return
+        val = bool(self.server_signing_var.get())
+        try:
+            r = requests.post('http://127.0.0.1:5000/set-signing', json={'enabled': val}, timeout=4)
+            if not r.ok:
+                # server may return JSON error
+                try:
+                    err = r.json().get('error')
+                except Exception:
+                    err = r.text
+                raise RuntimeError(err)
+            j = r.json()
+            self.server_signing_var.set(bool(j.get('enabled')))
+            messagebox.showinfo('Signing', f"Firma server-side {'habilitada' if j.get('enabled') else 'deshabilitada'}")
+        except Exception as e:
+            messagebox.showerror('Signing', f'No se pudo cambiar la configuración del servidor: {e}')
+            # refresh UI state
+            self.after(200, self.refresh_server_signing_status)
+
+    def refresh_server_signing_status(self):
+        """Consulta el estado de firma del servidor y actualiza la UI."""
+        try:
+            import requests
+            r = requests.get('http://127.0.0.1:5000/signing-status', timeout=3)
+            if not r.ok:
+                return
+            j = r.json()
+            self.server_signing_var.set(bool(j.get('enabled')))
+        except Exception:
+            # no-op (servidor no alcanzable)
+            pass
+
+    def enable_https_on_portal(self):
+        """Solicita regenerar certificados al portal y forzar reload (si el portal está en la misma máquina)."""
+        try:
+            import requests
+        except Exception:
+            messagebox.showerror('HTTPS', 'La librería requests no está disponible.')
+            return
+        ip = '127.0.0.1'
+        base = f'http://{ip}:5000'
+        try:
+            r = requests.post(base + '/generate-ssl', timeout=6)
+            if not r.ok:
+                raise RuntimeError('generate-ssl failed')
+            # reload server to pick up certs
+            requests.post(base + '/reload', timeout=6)
+            # esperar a que HTTPS esté disponible
+            import time, urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            start = time.time()
+            ok = False
+            while time.time() - start < 8:
+                try:
+                    rr = requests.get('https://127.0.0.1:5000/', timeout=2, verify=False)
+                    if rr.status_code == 200:
+                        ok = True
+                        break
+                except Exception:
+                    time.sleep(0.6)
+            if ok:
+                messagebox.showinfo('HTTPS', 'Portal HTTPS habilitado en https://127.0.0.1:5000 (auto‑firmado).')
+            else:
+                messagebox.showwarning('HTTPS', 'Se generaron los certificados pero no se detectó HTTPS activo. Reinicia el servidor manualmente si es necesario.')
+        except Exception as e:
+            messagebox.showerror('HTTPS', f'No se pudo habilitar HTTPS: {e}')
+
+    def show_install_guide(self):
+        popup = ctk.CTkToplevel(self)
+        popup.title('Guía: instalar perfil + certificado en iOS')
+        popup.geometry('560x420')
+        steps = (
+            '1) Conecta el iPhone a la misma red Wi‑Fi que este equipo.\n'
+            '2) Abre Safari en el iPhone y visita: https://{ip}:5000/ (o escribe la URL en el campo "Go to...").\n'
+            '3) Pulsa "Descargar perfil" y acepta la instalación del perfil en Ajustes → Perfil descargado → Instalar.\n'
+            '4) Descarga también el certificado: pulsa "Descargar certificado" y, en iOS, ve a Ajustes → General → Información → Ajustes de confianza de certificados y habilita la confianza para el certificado instalado.\n'
+            '5) Reinicia la conexión Wi‑Fi si es necesario.\n'
+            'Nota: instale perfil y certificado solo en dispositivos de su propiedad o con permiso explícito.'
+        )
+        ctk.CTkLabel(popup, text='Guía rápida — Instalar perfil y certificado', font=ctk.CTkFont(size=14, weight='bold')).pack(padx=12, pady=(12,6))
+        ctk.CTkTextbox(popup, height=260, width=520, corner_radius=6).pack(padx=12, pady=(6,12))
+        tb = popup.winfo_children()[-1]
+        tb.configure(state='normal')
+        tb.insert('0.0', steps)
+        tb.configure(state='disabled')
+        btn_frame = ctk.CTkFrame(popup)
+        btn_frame.pack(padx=12, pady=(6,12))
+        ctk.CTkButton(btn_frame, text='Abrir portal', command=self.open_captive_portal, width=180).pack(side='left', padx=6)
+        ctk.CTkButton(btn_frame, text='Descargar certificado', command=lambda: webbrowser.open('http://127.0.0.1:5000/certs/server.crt'), width=180).pack(side='left', padx=6)
+        ctk.CTkButton(popup, text='Cerrar', command=popup.destroy, fg_color='#005B5B').pack(pady=(6,12))
+
+    def toggle_hotspot(self):
+        """Intenta crear/alternar un hotspot Windows con netsh. Requiere privilegios de administrador y driver compatible."""
+        if os.name != 'nt':
+            messagebox.showerror('Hotspot', 'La creación de hotspot solo está soportada en Windows desde esta herramienta.')
+            return
+        import subprocess
+        # comprobar estado
+        def run(cmd):
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+                return r.returncode, r.stdout + r.stderr
+            except Exception as e:
+                return 1, str(e)
+        # intentar detener primero (toggle behavior)
+        rc, out = run('netsh wlan stop hostednetwork')
+        # configurar SSID/password
+        ssid = f'Jarvis_Portal_{int(time.time())%1000}'
+        pwd = 'jarvisportal123'
+        rc2, out2 = run(f'netsh wlan set hostednetwork mode=allow ssid="{ssid}" key="{pwd}"')
+        if rc2 != 0:
+            messagebox.showerror('Hotspot', f'No se pudo configurar el hotspot. Salida:\n{out2}')
+            return
+        rc3, out3 = run('netsh wlan start hostednetwork')
+        if rc3 != 0:
+            messagebox.showerror('Hotspot', f'No se pudo iniciar el hotspot. Salida:\n{out3}\nNota: el driver puede no soportar hostednetwork o se requieren permisos de administrador.')
+            return
+        # hotspot iniciado
+        url = f'http://{self._get_local_ip()}:5000/'
+        self.clipboard_clear(); self.clipboard_append(url)
+        messagebox.showinfo('Hotspot iniciado', f'Hotspot iniciado: {ssid}\nContraseña: {pwd}\nURL del portal copiada al portapapeles:\n{url}\nConecta el iPhone a la red Wi‑Fi creada para que se abra el portal cautivo automáticamente.')
+
+        # Keep compatibility: show_dns_instructions implementation
+        pass
+
     def show_dns_instructions(self):
         txt = (
             "Bypass DNS HUD — Instrucciones (visual):\n\n"
@@ -456,6 +844,7 @@ class JarvisApp(ctk.CTk):
             "Nota: Este es un instructivo; algunos bypass requieren herramientas avanzadas."
         )
         messagebox.showinfo("Bypass DNS HUD — Instrucciones", txt)
+
 
     def export_logs(self):
         """Exporta el contenido de la consola a `logs/jarvis_logs_YYYYMMDD_HHMMSS.txt` y JSON estructurado."""
@@ -516,7 +905,20 @@ class JarvisApp(ctk.CTk):
             self.log_history.append(text)
         except Exception:
             pass
-        self.log_queue.put(text)
+        # enqueue for console rendering
+        try:
+            self.log_queue.put(text)
+        except Exception:
+            pass
+        # also append to a live logfile so tests / external watchers can follow events in real time
+        try:
+            logs_dir = os.path.join(os.path.dirname(__file__), "logs")
+            os.makedirs(logs_dir, exist_ok=True)
+            lf = os.path.join(logs_dir, "live.log")
+            with open(lf, "a", encoding="utf-8") as fh:
+                fh.write(text)
+        except Exception:
+            pass
 
     def _process_log_queue(self):
         try:
