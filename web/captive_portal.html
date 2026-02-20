@@ -15,52 +15,129 @@
     .steps{background:#f2fcfc;border-left:4px solid #007a7a;padding:12px;border-radius:6px}
     label{display:block;margin-top:8px}
     input[type=text]{width:100%;padding:8px;margin-top:6px;border:1px solid #ddd;border-radius:6px}
+  /* iOS-inspired styles (glass, rounded buttons, readable text) */
+  body{font-family:-apple-system, 'SF Pro Text', Inter, Arial, Helvetica, sans-serif;background:linear-gradient(180deg,#f4fbfb 0%,#eef8f8 100%);color:#0b3a3a;margin:0}
+  .card{max-width:640px;margin:36px auto;background:rgba(255,255,255,0.86);backdrop-filter:blur(6px);border-radius:20px;padding:28px;box-shadow:0 12px 36px rgba(3,22,23,.12);border:1px solid rgba(10,30,30,.04)}
+  h1{color:#007AFF;margin:0 0 8px;font-weight:600}
+  p.lead{color:#20383a;opacity:.9;margin-bottom:12px}
+  .btn{display:inline-block;padding:14px 18px;border-radius:12px;background:#007AFF;color:#fff;text-decoration:none;margin:8px 6px;font-weight:600;box-shadow:0 6px 18px rgba(0,122,255,.12)}
+  .btn.ghost{background:transparent;color:#007AFF;border:1px solid rgba(0,122,255,.12);box-shadow:none}
+  .qr{display:block;margin:22px auto;width:220px;height:220px;border-radius:18px;border:1px solid rgba(0,0,0,.06);background:#fff;padding:8px}
+  .note{font-size:0.95rem;color:#4b6767;margin-top:12px}
+  .steps{background:linear-gradient(180deg,#f7fffe,#effdfd);border-left:4px solid #00c0c0;padding:14px;border-radius:10px}
+  .status-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:999px;background:rgba(0,0,0,0.03);font-weight:600}
+  .status-dot{width:10px;height:10px;border-radius:50%;background:#ccc;box-shadow:0 2px 6px rgba(2,48,52,.06)}
+  label{display:block;margin-top:8px;font-weight:600;color:#0b3a3a}
+  input[type=text]{width:100%;padding:10px;margin-top:6px;border:1px solid #e6f2f2;border-radius:10px;font-size:15px}
   </style>
 </head>
 <body>
   <div class="card">
     <h1>Portal Cautivo — Jarvis</h1>
-    <p class="lead">Usa esta página para instalar un perfil de red (DNS) y continuar con el diagnóstico del dispositivo.</p>
+    <p class="lead">Instala el perfil de diagnóstico y permite que la app capture el ticket de activación automáticamente.</p>
 
-    <div class="steps">
-      <strong>Instrucciones rápidas</strong>
-      <ol>
-        <li>Si estás en la pantalla cautiva escribe la URL completa arriba (campo "Go to...").</li>
-        <li>Pulsa <b>Descargar perfil</b> e instala el perfil desde Safari → Ajustes.</li>
-        <li>Si el webview permite, pulsa <b>Abrir en Safari</b> para cambiar al navegador nativo.</li>
-      </ol>
+    <div class="steps" style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <strong>Pasos</strong>
+        <ol style="margin:8px 0 0;padding-left:18px">
+          <li>Conecta al Wi‑Fi de Jarvis o usa la red local.</li>
+          <li>Descarga <b>server.crt</b> y confía en el certificado.</li>
+          <li>Pulsa <b>Instalar Perfil de Diagnóstico</b> y sigue Instalación → Instalar.</li>
+        </ol>
+      </div>
+      <div style="text-align:right">
+        <div class="status-pill"><span id="dnsDot" class="status-dot"></span> <small id="dnsStatus">DNS: comprobando</small></div>
+        <div style="height:6px"></div>
+        <div class="status-pill"><span id="deviceDot" class="status-dot"></span> <small id="deviceStatus">Dispositivo: esperando</small></div>
+      </div>
     </div>
 
-    <div style="margin-top:12px">
-      <label>SSID (opcional)</label>
-      <input id="ssid" type="text" placeholder="TuRedWiFi" />
-      <label>DNS (coma-separado)</label>
-      <input id="dns" type="text" placeholder="1.1.1.1,8.8.8.8" />
-      <div style="margin-top:10px">
-        <a id="dlprofile" class="btn" href="#">Descargar perfil (.mobileconfig)</a>
-        <a id="openSafari" class="btn" href="#">Abrir en Safari</a>
-        <a id="dlcert" class="btn" href="#">Descargar certificado (para iOS)</a>
-        <a id="genRecovery" class="btn" href="#">Generar Recovery (PDF)</a>
+    <div style="margin-top:18px">
+      <label>Instalación rápida</label>
+      <div style="display:flex;gap:10px;align-items:center">
+        <a id="installProfile" class="btn" href="#">Instalar Perfil de Diagnóstico</a>
+        <a id="dlcert" class="btn ghost" href="#">Descargar certificado</a>
+        <a id="qrAction" class="btn ghost" href="#">Mostrar QR</a>
       </div>
-      <div style="margin-top:10px; display:flex; align-items:center; gap:10px;">
-        <input id="signToggle" type="checkbox" /> <label for="signToggle">Firmar perfiles (server-side)</label>
-        <small id="signingHint" style="color:#666">(comprobando disponibilidad...)</small>
+      <div style="margin-top:12px">
+        <input id="ssid" type="text" placeholder="TuRedWiFi (opcional)" />
       </div>
     </div>
 
     <img id="qrimg" class="qr" alt="QR - escanéalo con otro dispositivo"/>
 
-    <div class="note">Si el iPhone está en la pantalla de bienvenida (Hola) usa el campo <b>Go to...</b> del portal cautivo y escribe la URL completa mostrada arriba. Si instalas el certificado, recuerda activar la confianza en Ajustes → General → Información → Ajustes de confianza de certificados.</div>
+    <div class="note" style="margin-top:14px">Sigue las instrucciones en pantalla. La app de escritorio mostrará el ticket tan pronto como se capture. (No compartas el ticket con terceros.)</div>
   </div>
 
   <script>
+    // --- WebSocket to notify server of user actions ---
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = wsProto + '//' + location.host + '/ws';
+    let ws = null;
+    try{
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => console.log('WS open');
+      ws.onmessage = (ev) => console.log('WS msg', ev.data);
+      ws.onclose = () => console.log('WS closed');
+    }catch(e){ ws = null; }
+
+    function sendEvent(type, data){
+      const payload = JSON.stringify({ type:type, ts: Date.now(), data:data });
+      if(ws && ws.readyState === WebSocket.OPEN){ ws.send(payload); }
+      // always post to server endpoint as fallback for polling UIs
+      fetch('/activation-log', { method:'POST', headers:{'Content-Type':'application/json'}, body:payload }).catch(()=>{});
+    }
+
     function buildUrl(){
       const ssid = document.getElementById('ssid').value || 'TuRedWiFi';
-      const dns = document.getElementById('dns').value || '1.1.1.1';
+      const dns = '1.1.1.1';
       const base = location.origin; // espera servidor local
-      return `${base}/profile.mobileconfig?ssid=${encodeURIComponent(ssid)}&dns=${encodeURIComponent(dns)}`;
+      return `${base}/profile.mobileconfig?ssid=${encodeURIComponent(ssid)}&dns=${encodeURIComponent(dns)}&sign=1`;
     }
+
     function refreshQr(){
+      const u = location.href;
+      document.getElementById('qrimg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(u);
+    }
+
+    document.getElementById('installProfile').addEventListener('click', function(e){
+      e.preventDefault();
+      sendEvent('install-profile', {via:'portal'});
+      const url = buildUrl();
+      window.open(url, '_blank');
+    });
+
+    document.getElementById('dlcert').addEventListener('click', function(e){
+      e.preventDefault();
+      sendEvent('download-cert', {});
+      window.open('/certs/server.crt', '_blank');
+    });
+
+    document.getElementById('qrAction').addEventListener('click', function(e){
+      e.preventDefault();
+      sendEvent('show-qr', {});
+      refreshQr();
+      alert('QR actualizado. Escanéalo con otro dispositivo.');
+    });
+
+    // poll the signing-status and device status to update pills
+    async function refreshStatus(){
+      try{
+        const r = await fetch('/signing-status');
+        const j = await r.json();
+        document.getElementById('dnsDot').style.background = '#00c853';
+        document.getElementById('dnsStatus').innerText = 'DNS: activo (interceptando)';
+        // device state check omitted here; desktop app reports device presence
+      }catch(e){
+        document.getElementById('dnsDot').style.background = '#ff3b30';
+        document.getElementById('dnsStatus').innerText = 'DNS: no disponible';
+      }
+    }
+
+    refreshQr(); refreshStatus();
+  </script>
+</body>
+</html>    function refreshQr(){
       const u = location.href;
       document.getElementById('qrimg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(u);
     }

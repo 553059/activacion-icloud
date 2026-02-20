@@ -69,6 +69,7 @@ class JarvisApp(ctk.CTk):
             ("Launcher", lambda: self.show_frame("launcher")),
             ("Diagnóstico", lambda: self.show_frame("diagnostic")),
             ("Pánicos", lambda: self.show_frame("panics")),
+            ("Intercepción", lambda: self.show_frame("intercept")),
             ("Servidor", lambda: self.show_frame("server")),
             ("Ajustes", lambda: self.show_frame("settings")),
         ]
@@ -91,6 +92,12 @@ class JarvisApp(ctk.CTk):
         f2 = ctk.CTkFrame(self.main_frame)
         self.frames["diagnostic"] = f2
         self._populate_diagnostic(f2)
+
+        # Interception / captive-portal dashboard
+        f_intercept = ctk.CTkFrame(self.main_frame)
+        self.frames["intercept"] = f_intercept
+        self._populate_intercept(f_intercept)
+
     def _populate_launcher(self, parent):
         ctk.CTkLabel(parent, text="Launcher — Accesos rápidos iPhone", font=ctk.CTkFont(size=16, weight="bold"), text_color="#00E6E6").pack(anchor="nw", padx=12, pady=8)
         ctk.CTkLabel(parent, text="Accesos útiles para configuración y diagnóstico de iPhone conectado:", font=ctk.CTkFont(size=12)).pack(anchor="nw", padx=12, pady=(0,8))
@@ -270,6 +277,88 @@ class JarvisApp(ctk.CTk):
         self.console.tag_config("key", foreground="#9ED6FF")
         self.console.tag_config("value", foreground="#FFFFFF")
         self.console.tag_config("section", foreground="#00A2A2", underline=1)
+
+    def _populate_intercept(self, parent):
+        """Interception panel: status cards + live log + quick actions."""
+        header = ctk.CTkFrame(parent)
+        header.pack(fill='x', padx=12, pady=(6,8))
+        self.dns_status_label = ctk.CTkLabel(header, text="DNS Server: comprobando", width=220, fg_color="#08303A", corner_radius=8)
+        self.dns_status_label.pack(side='left', padx=(0,8))
+        self.intercept_device_label = ctk.CTkLabel(header, text="Dispositivo: esperando", width=260, fg_color="#08303A", corner_radius=8)
+        self.intercept_device_label.pack(side='left', padx=(0,8))
+        self.intercept_traffic_label = ctk.CTkLabel(header, text="Tráfico: 0 eventos", width=180, fg_color="#08303A", corner_radius=8)
+        self.intercept_traffic_label.pack(side='left')
+
+        body = ctk.CTkFrame(parent)
+        body.pack(fill='both', expand=True, padx=12, pady=(0,12))
+
+        left = ctk.CTkFrame(body)
+        left.pack(side='left', fill='both', expand=True)
+        ctk.CTkLabel(left, text='Panel de Intercepción', font=ctk.CTkFont(size=16, weight='bold')).pack(anchor='nw')
+        ctk.CTkLabel(left, text='1) Conecta el USB. 2) Escanea el QR desde el iPhone. 3) Espera la captura del ticket.', wraplength=520).pack(anchor='nw', pady=(6,10))
+        ctk.CTkButton(left, text='Abrir Portal Cautivo', fg_color='#007ACC', command=lambda: webbrowser.open('https://127.0.0.1:5000/'), width=320).pack(anchor='nw', pady=(6,8))
+
+        right = ctk.CTkFrame(body, width=380)
+        right.pack(side='right', fill='y', padx=(12,0))
+        ctk.CTkLabel(right, text='Live Intercept Log', font=ctk.CTkFont(size=13, weight='bold')).pack(anchor='nw')
+        self.intercept_console = ctk.CTkTextbox(right, height=340)
+        self.intercept_console.pack(fill='both', expand=True, pady=(6,0))
+        self.intercept_console.configure(state='disabled')
+
+        # start polling events
+        try:
+            self.after(800, self._poll_intercept_events)
+        except Exception:
+            pass
+
+    def _append_intercept_log(self, text: str):
+        try:
+            self.intercept_console.configure(state='normal')
+            self.intercept_console.insert('end', text + '\n')
+            self.intercept_console.see('end')
+            self.intercept_console.configure(state='disabled')
+        except Exception:
+            pass
+
+    def _poll_intercept_events(self):
+        # Poll server /events for new interception events and update UI
+        try:
+            import requests, urllib3
+            urllib3.disable_warnings()
+            r = requests.get('https://127.0.0.1:5000/events', verify=False, timeout=2)
+            if r.ok:
+                payload = r.json()
+                evs = payload.get('events', [])
+                if evs:
+                    self.intercept_traffic_label.configure(text=f'Tráfico: {len(evs)} eventos')
+                    for e in evs:
+                        ts = time.strftime('%H:%M:%S', time.localtime(e.get('ts', time.time())))
+                        typ = e.get('type') or e.get('data') or e.get('host')
+                        self._append_intercept_log(f'[{ts}] {typ} — {str(e.get("data") or e.get("payload") or e.get("host") or "")[:200]}')
+                    # clear server-side queue
+                    try:
+                        requests.get('https://127.0.0.1:5000/events?clear=1', verify=False, timeout=1)
+                    except Exception:
+                        pass
+            # update DNS/server status hint
+            try:
+                r2 = requests.get('https://127.0.0.1:5000/signing-status', verify=False, timeout=1)
+                if r2.ok and r2.json().get('available'):
+                    self.dns_status_label.configure(text='DNS Server: interceptando')
+                else:
+                    self.dns_status_label.configure(text='DNS Server: no disponible')
+            except Exception:
+                pass
+            # device presence
+            if self.current_udid:
+                self.intercept_device_label.configure(text=f'Dispositivo: {self.current_udid}')
+        except Exception:
+            pass
+        finally:
+            try:
+                self.after(800, self._poll_intercept_events)
+            except Exception:
+                pass
 
     # ---- Actions / background tasks ----
     def poll_device(self):

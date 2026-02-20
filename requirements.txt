@@ -13,3 +13,7 @@ reportlab  # optional (only required for PDF export from recovery_docs)
 # HTTPS and profile signing
 cryptography
 requests
+
+# DNS interception and websocket notifications
+dnslib
+flask-sock

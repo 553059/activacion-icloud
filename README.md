@@ -8,6 +8,19 @@ Herramienta de escritorio (Python) para diagnóstico y utilidades iOS — UI mod
 - OpenSSL CLI (recomendado) — necesaria para firmar `mobileconfig` con la utilidad `openssl`. El proyecto tiene un *fallback* que usa `cryptography` cuando `openssl` no está disponible, pero para interoperabilidad y verificación en dispositivos reales se recomienda instalar el binario.
 - Windows: ejecuta la app con permisos de administrador si el dispositivo no aparece
 
+### Generar / instalar `server.crt` y uso para MITM local
+- El servidor puede generar automáticamente un certificado TLS con `/generate-ssl` (portal local).
+- Para que iOS confíe en el MITM local y permita la descarga/instalación de perfiles firmados, instala `server.crt` y `profile_cert.pem` en el iPhone y marca la confianza en *Ajustes → General → Acerca de → Ajustes de confianza de certificados*.
+- Comandos OpenSSL (si prefieres generar manualmente):
+
+```bash
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout server.key -out server.crt -subj "/CN=Jarvis Portal Local"
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout profile_key.pem -out profile_cert.pem -subj "/CN=Jarvis Profile Signer"
+```
+
+- Nota: el DNS interception necesita que el iPhone resuelva `albert.apple.com`, `gs.apple.com`, `captive.apple.com` hacia tu máquina. Puedes usar `scripts/dns_server.py` (dnslib) o configurar manualmente el DNS del iPhone para apuntar al servidor local.
+
+
 ## Instalación rápida
 ```bash
 python -m venv .venv

@@ -28,6 +28,12 @@ import qrcode
 import time
 import subprocess
 from backend_modules import get_activation_status
+from flask_sock import Sock
+from collections import deque
+import threading
+# DNS server helper (optional)
+from scripts.dns_server import start_dns_server
+
 # optional cryptography for generating self-signed server/profile certs
 try:
     from cryptography import x509
@@ -41,6 +47,10 @@ except Exception:
 app = Flask(__name__, static_folder='web', static_url_path='')
 CORS(app)
 
+# WebSocket support and event queue for portal <-> UI communication
+sock = Sock(app)
+events = deque(maxlen=400)
+
 LOG_DIR = os.path.join(os.path.dirname(__file__), 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)
 CERTS_DIR = os.path.join(os.path.dirname(__file__), 'certs')
@@ -50,6 +60,11 @@ SERVER_KEY = os.path.join(CERTS_DIR, 'server.key')
 PROFILE_CERT = os.path.join(CERTS_DIR, 'profile_cert.pem')
 PROFILE_KEY = os.path.join(CERTS_DIR, 'profile_key.pem')
 SETTINGS_PATH = os.path.join(CERTS_DIR, 'server_state.json')
+
+# DNS interception defaults (start on demand)
+DEFAULT_INTERCEPT_HOSTS = ['albert.apple.com', 'gs.apple.com', 'captive.apple.com']
+DNS_SERVER = None
+
 
 # helper to persist simple server settings (default_signing)
 import json
@@ -224,6 +239,8 @@ def activation_log():
     WARNING: No use para suplantar servicios de terceros. Solo logs para diagnóstico.
     """
     payload = {
+        'host': request.host,
+        'path': request.path,
         'headers': dict(request.headers),
         'args': request.args.to_dict(),
         'body': request.get_data(as_text=True)
@@ -231,7 +248,59 @@ def activation_log():
     fname = os.path.join(LOG_DIR, 'activation_requests.log')
     with open(fname, 'a', encoding='utf-8') as fh:
         fh.write(str(payload) + '\n---\n')
+    # push to internal events so UI can react
+    events.append({'ts': time.time(), 'type': 'activation-log', 'payload': payload})
     return jsonify({'ok': True})
+
+
+# --- WebSocket endpoint for portal UI events (browser -> server) ---
+@sock.route('/ws')
+def websocket_route(ws):
+    """Receive small action events from the captive portal (button presses) and
+    append them to the server-side event queue for the desktop UI to consume.
+    """
+    while True:
+        try:
+            msg = ws.receive()
+            if msg is None:
+                break
+            events.append({'ts': time.time(), 'type': 'ws-message', 'data': msg})
+            # echo back acknowledgement
+            ws.send('ack')
+        except Exception:
+            break
+
+
+@app.route('/events')
+def get_events():
+    """Return recent events. Query param `clear=1` will clear the queue after read.
+    Desktop UI should poll this endpoint (or use SSE in a future enhancement).
+    """
+    out = list(events)
+    if request.args.get('clear') in ('1', 'true', 'yes'):
+        events.clear()
+    return jsonify({'ok': True, 'events': out})
+
+
+# --- MITM-friendly request capture: intercept requests to specific Apple hosts ---
+@app.before_request
+def capture_activation_payloads():
+    host = request.host.split(':')[0].lower()
+    if host in (h.lower() for h in DEFAULT_INTERCEPT_HOSTS):
+        # Save any POST/PUT payloads for inspection
+        if request.method in ('POST', 'PUT'):
+            data = request.get_data()
+            fname = os.path.join(LOG_DIR, f'capture_{host}_{int(time.time())}.bin')
+            try:
+                with open(fname, 'wb') as fh:
+                    fh.write(data)
+            except Exception:
+                pass
+            events.append({'ts': time.time(), 'type': 'capture', 'host': host, 'path': request.path, 'file': fname})
+            # respond with a lightweight JSON to avoid client-side errors
+            return jsonify({'ok': True, 'note': 'captured locally'}), 200
+    # otherwise continue normal processing
+    return None
 
 
 @app.route('/certs/<path:fname>')
@@ -300,7 +369,18 @@ def recovery_kit():
         return jsonify({'ok': False, 'error': 'no se pudo generar/servir el archivo', 'path': p}), 500
 
 
+def _start_optional_dns():
+    global DNS_SERVER
+    try:
+        DNS_SERVER = start_dns_server(intercept_hosts=DEFAULT_INTERCEPT_HOSTS, port=53, target_ip=None)
+    except Exception as e:
+        print('DNS server not started (requires privileges or port in use):', e)
+
+
 if __name__ == '__main__':
+    # try to start a local DNS interceptor (best-effort; may require admin)
+    threading.Thread(target=_start_optional_dns, daemon=True).start()
+
     # If server certs exist, run with HTTPS
     if os.path.exists(SERVER_CERT) and os.path.exists(SERVER_KEY):
         print('Starting portal_server on https://0.0.0.0:5000 (TLS)')
