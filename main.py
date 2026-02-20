@@ -185,30 +185,152 @@ class JarvisApp(ctk.CTk):
         self.show_frame("dashboard")
 
     def _populate_dashboard(self, parent):
-        left = ctk.CTkFrame(parent)
-        left.pack(side="left", fill="y", padx=(12,8), pady=12)
+        """Modern dashboard card that mirrors the provided web UI (local, native).
+        - Left: main CTA + inputs
+        - Right: QR + status pills
+        """
+        # clear parent
+        for w in parent.winfo_children():
+            w.destroy()
 
-        self.device_status_label = ctk.CTkLabel(left, text="Ningún dispositivo detectado", width=260, height=40, corner_radius=8)
-        self.device_status_label.pack(padx=8, pady=8)
+        # main card container (polished colors / spacing)
+        card = ctk.CTkFrame(parent, corner_radius=22, fg_color="#062f34")
+        card.pack(fill="both", expand=True, padx=12, pady=12)
 
-        self.device_info_text = ctk.CTkLabel(left, text="Esperando dispositivo...", justify="left")
-        self.device_info_text.pack(padx=8, pady=6)
+        content = ctk.CTkFrame(card)
+        content.pack(fill="both", expand=True, padx=26, pady=26)
 
-        # Utilities quick-actions
-        ctk.CTkButton(left, text="Reiniciar SpringBoard", fg_color="#005B5B", command=self.restart_springboard).pack(pady=(18,4), padx=8)
-        ctk.CTkButton(left, text="Bypass DNS HUD (instrucciones)", fg_color="#005B5B", command=self.show_dns_instructions).pack(pady=4, padx=8)
+        # Left column (content + CTAs)
+        left = ctk.CTkFrame(content)
+        left.pack(side="left", fill="both", expand=True, padx=(0,20))
 
-        # Owner intel quick
-        ctk.CTkButton(left, text="Extraer Info Propietario", fg_color="#008080", command=self.extract_owner_intel).pack(pady=(30,4), padx=8)
+        ctk.CTkLabel(left, text="Jarvis Portal — Captive UI", font=ctk.CTkFont(size=24, weight="bold"), text_color="#007AFF").pack(anchor="nw")
+        ctk.CTkLabel(left, text="Instala el perfil de diagnóstico en el dispositivo y captura automáticamente el ticket de activación.", wraplength=540, text_color="#cfeff0").pack(anchor="nw", pady=(8,16))
 
-        # Center / flexible area (info panels)
-        right = ctk.CTkFrame(parent)
-        right.pack(side="right", fill="both", expand=True, padx=(8,12), pady=12)
-        ctk.CTkLabel(right, text="Módulo Dashboard — Auto-Detect", font=ctk.CTkFont(size=16, weight="bold"), text_color="#00E6E6").pack(anchor="nw", padx=10, pady=(6,12))
-        self.dashboard_detail = ctk.CTkTextbox(right, width=720, height=420)
-        self.dashboard_detail.pack(padx=12, pady=6)
-        self.dashboard_detail.insert("0.0", "Salida de detección y consejos aparecerán aquí.")
-        self.dashboard_detail.configure(state="disabled")
+        # Steps box (softer background)
+        steps = ctk.CTkFrame(left, fg_color="#0d3b3b", corner_radius=10)
+        steps.pack(fill="x", pady=(0,14))
+        ctk.CTkLabel(steps, text="1) Conecta el dispositivo por USB", anchor="w", text_color="#e6ffff").pack(anchor="w", padx=14, pady=(10,0))
+        ctk.CTkLabel(steps, text="2) Escanea el QR o abre el portal en Safari", anchor="w", text_color="#e6ffff").pack(anchor="w", padx=14, pady=(6,0))
+        ctk.CTkLabel(steps, text="3) Instala el profile y espera la captura", anchor="w", text_color="#e6ffff").pack(anchor="w", padx=14, pady=(6,12))
+
+        # Inputs: SSID / DNS
+        row_inputs = ctk.CTkFrame(left)
+        row_inputs.pack(fill="x", pady=(6,14))
+        ctk.CTkLabel(row_inputs, text="SSID", width=80).pack(side="left", padx=(0,8))
+        self.ssid_entry = ctk.CTkEntry(row_inputs, placeholder_text="TuRedWiFi")
+        self.ssid_entry.pack(side="left", fill="x", expand=True, padx=(0,12))
+        ctk.CTkLabel(row_inputs, text="DNS", width=60).pack(side="left", padx=(0,8))
+        self.dns_entry = ctk.CTkEntry(row_inputs, placeholder_text="1.1.1.1")
+        self.dns_entry.pack(side="left", fill="x", padx=(0,0))
+
+        # CTA buttons (larger, more prominent)
+        ctk.CTkButton(left, text="Instalar Perfil de Diagnóstico", fg_color="#007AFF", width=420, height=54, command=self._install_profile_action).pack(pady=(10,10))
+        btn_row = ctk.CTkFrame(left)
+        btn_row.pack(fill="x", pady=(8,10))
+        ctk.CTkButton(btn_row, text="Descargar certificado", fg_color="#00A2A2", width=230, command=self._download_cert_action).pack(side="left", padx=(0,10))
+        ctk.CTkButton(btn_row, text="Mostrar QR", fg_color="#00A2A2", width=160, command=self._refresh_dashboard_qr).pack(side="left")
+
+        # Signing toggle and hint
+        self.dashboard_sign_var = tk.BooleanVar(value=self.server_signing_var.get() if hasattr(self, 'server_signing_var') else False)
+        ctk.CTkCheckBox(left, text="Firmar perfiles (server-side)", variable=self.dashboard_sign_var).pack(anchor="w", pady=(6,12))
+
+        ctk.CTkLabel(left, text="Nota: instala `server.crt` en el iPhone y configura DNS para redirigir a esta máquina. La app mostrará el ticket en cuanto se capture.", wraplength=520, text_color="#bcdcdc").pack(anchor="w", pady=(6,0))
+
+        # Right column (QR + statuses)
+        right = ctk.CTkFrame(content, width=340)
+        right.pack(side="right", fill="y")
+
+        # QR container (white card to match web look)
+        qr_frame = ctk.CTkFrame(right, fg_color="#ffffff", corner_radius=16, width=280, height=280)
+        qr_frame.pack(pady=(6,12))
+        self.qr_label = ctk.CTkLabel(qr_frame, text="", width=260, height=260, corner_radius=12, fg_color="#ffffff")
+        self.qr_label.place(relx=0.5, rely=0.5, anchor='center')
+
+        # Status pills
+        self.signing_status_label = ctk.CTkLabel(right, text="Firma: comprobando", fg_color="#08303A", corner_radius=12, width=260, text_color="#d8ffff")
+        self.signing_status_label.pack(pady=(6,8))
+        self.portal_dns_label = ctk.CTkLabel(right, text="DNS: comprobando", fg_color="#08303A", corner_radius=12, width=260, text_color="#d8ffff")
+        self.portal_dns_label.pack(pady=(6,8))
+        self.device_status_small = ctk.CTkLabel(right, text="Dispositivo: —", fg_color="#08303A", corner_radius=12, width=260, text_color="#d8ffff")
+        self.device_status_small.pack(pady=(6,8))
+
+        # small QR actions
+        ctk.CTkButton(right, text="Abrir portal en navegador", fg_color="#0066CC", width=260, command=self.open_captive_portal).pack(pady=(14,0))
+
+        # initial QR + status refresh
+        self.after(200, self._refresh_dashboard_qr)
+        self.after(600, self._refresh_dashboard_status)
+
+    def _build_profile_url(self):
+        # Build the full profile URL that will be encoded into the QR
+        host = self._get_local_ip() or '127.0.0.1'
+        base = f"https://{host}:5000"
+        ssid = urllib.parse.quote((self.ssid_entry.get() or 'TuRedWiFi'))
+        dns = urllib.parse.quote((self.dns_entry.get() or '1.1.1.1'))
+        sign = '1' if (self.dashboard_sign_var.get() or getattr(self, 'server_signing_var', tk.BooleanVar()).get()) else '0'
+        return f"{base}/profile.mobileconfig?ssid={ssid}&dns={dns}&sign={sign}"
+
+    def _refresh_dashboard_qr(self):
+        try:
+            import qrcode
+            from PIL import Image, ImageTk
+            url = self._build_profile_url()
+            img = qrcode.make(url).convert('RGB').resize((260,260))
+            self._qr_img_tk = ImageTk.PhotoImage(img)
+            self.qr_label.configure(image=self._qr_img_tk)
+        except Exception:
+            # fallback: show text if QR cannot be generated
+            self.qr_label.configure(text='QR no disponible')
+
+    def _install_profile_action(self):
+        url = self._build_profile_url()
+        try:
+            webbrowser.open(url)
+        except Exception:
+            messagebox.showinfo('Abrir perfil', f'Abre manualmente: {url}')
+
+    def _download_cert_action(self):
+        try:
+            webbrowser.open('https://' + self._get_local_ip() + ':5000/certs/server.crt')
+        except Exception:
+            webbrowser.open('https://127.0.0.1:5000/certs/server.crt')
+
+    def _refresh_dashboard_status(self):
+        # Update signing and DNS/device hints
+        try:
+            import requests, urllib3
+            urllib3.disable_warnings()
+            r = requests.get('https://127.0.0.1:5000/signing-status', verify=False, timeout=1)
+            if r.ok and r.json().get('available'):
+                enabled = r.json().get('enabled', False)
+                self.signing_status_label.configure(text=('Firma: por defecto' if enabled else 'Firma: disponible'))
+            else:
+                self.signing_status_label.configure(text='Firma: no disponible')
+        except Exception:
+            self.signing_status_label.configure(text='Firma: no disponible')
+
+        # DNS helper status (best-effort)
+        try:
+            r2 = requests.get('https://127.0.0.1:5000/events', verify=False, timeout=1)
+            if r2.ok:
+                self.portal_dns_label.configure(text='DNS: interceptor activo')
+            else:
+                self.portal_dns_label.configure(text='DNS: no disponible')
+        except Exception:
+            self.portal_dns_label.configure(text='DNS: no disponible')
+
+        # device tiny status
+        if self.current_udid:
+            self.device_status_small.configure(text=f'Dispositivo: {self.current_udid}')
+        else:
+            self.device_status_small.configure(text='Dispositivo: —')
+
+        # schedule next refresh
+        try:
+            self.after(1500, self._refresh_dashboard_status)
+        except Exception:
+            pass
 
     def _populate_diagnostic(self, parent):
         ctk.CTkLabel(parent, text="Inteligencia (Owner Intel)", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="nw", padx=12, pady=8)
@@ -227,13 +349,52 @@ class JarvisApp(ctk.CTk):
         self.panics_text.configure(state="disabled")
 
     def _populate_server(self, parent):
-        ctk.CTkLabel(parent, text="Server Interceptor", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="nw", padx=12, pady=8)
-        ctk.CTkButton(parent, text="Solicitar Ticket de Activación", command=self.request_activation_ticket, fg_color="#0066CC", width=280).pack(padx=12, pady=10)
-        # Nuevo: botón para intentar activar el dispositivo usando el ticket (confirmación requerida)
-        ctk.CTkButton(parent, text="Activar dispositivo", command=self.activate_device, fg_color="#20A020", width=280).pack(padx=12, pady=(0,10))
-        self.server_text = ctk.CTkTextbox(parent, height=420)
-        self.server_text.pack(fill="both", expand=True, padx=12, pady=8)
-        self.server_text.configure(state="disabled")
+        # Modern server interceptor card with large CTAs and compact status
+        for w in parent.winfo_children():
+            w.destroy()
+
+        card = ctk.CTkFrame(parent, corner_radius=16, fg_color="#071923")
+        card.pack(fill='both', expand=True, padx=12, pady=12)
+
+        header = ctk.CTkFrame(card)
+        header.pack(fill='x', padx=12, pady=(10,8))
+        ctk.CTkLabel(header, text='Server Interceptor — Activation Routing', font=ctk.CTkFont(size=18, weight='bold'), text_color="#00D1FF").pack(side='left')
+
+        # action area
+        actions = ctk.CTkFrame(card)
+        actions.pack(fill='x', padx=18, pady=(6,14))
+        left_actions = ctk.CTkFrame(actions)
+        left_actions.pack(side='left', fill='x', expand=True)
+
+        ctk.CTkButton(left_actions, text='Solicitar Ticket de Activación', command=self.request_activation_ticket, fg_color='#007AFF', width=360, height=44).pack(pady=(6,8))
+        btn_row = ctk.CTkFrame(left_actions)
+        btn_row.pack(pady=(4,8))
+        ctk.CTkButton(btn_row, text='Guardar Ticket (logs)', command=self.save_activation_ticket, fg_color='#00A2A2', width=160).pack(side='left', padx=(0,8))
+        ctk.CTkButton(btn_row, text='Activar dispositivo', command=self.activate_device, fg_color='#20A020', width=160).pack(side='left')
+
+        # server status + log area
+        bottom = ctk.CTkFrame(card)
+        bottom.pack(fill='both', expand=True, padx=18, pady=(6,12))
+
+        status_row = ctk.CTkFrame(bottom)
+        status_row.pack(fill='x', pady=(0,8))
+        self._last_ticket_label = ctk.CTkLabel(status_row, text='Último ticket: —', fg_color='#042B2E', corner_radius=10, width=260, text_color='#BEEFFF')
+        self._last_ticket_label.pack(side='left', padx=(0,8))
+        self._server_state_label = ctk.CTkLabel(status_row, text='Estado: listo', fg_color='#042B2E', corner_radius=10, width=180, text_color='#BEEFFF')
+        self._server_state_label.pack(side='left')
+
+        self.server_text = ctk.CTkTextbox(bottom, height=320)
+        self.server_text.pack(fill='both', expand=True)
+        self.server_text.configure(state='disabled')
+        # populate last ticket if exists
+        try:
+            logs = os.listdir('logs') if os.path.isdir('logs') else []
+            tickets = [f for f in logs if f.startswith('activation_ticket_')]
+            if tickets:
+                t = sorted(tickets)[-1]
+                self._last_ticket_label.configure(text=f'Último ticket: {t}')
+        except Exception:
+            pass
 
     def _build_console(self, parent):
         ctk.CTkLabel(parent, text="Consola — Logs en vivo", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=8, pady=(6,0))
@@ -279,35 +440,60 @@ class JarvisApp(ctk.CTk):
         self.console.tag_config("section", foreground="#00A2A2", underline=1)
 
     def _populate_intercept(self, parent):
-        """Interception panel: status cards + live log + quick actions."""
-        header = ctk.CTkFrame(parent)
-        header.pack(fill='x', padx=12, pady=(6,8))
-        self.dns_status_label = ctk.CTkLabel(header, text="DNS Server: comprobando", width=220, fg_color="#08303A", corner_radius=8)
+        """Modernized Interception panel — large CTAs, QR hint and live log.
+
+        Preserves existing widget names and polling (_poll_intercept_events).
+        """
+        # clear parent frame
+        for w in parent.winfo_children():
+            w.destroy()
+
+        card = ctk.CTkFrame(parent, corner_radius=16, fg_color="#071923")
+        card.pack(fill='both', expand=True, padx=12, pady=12)
+
+        content = ctk.CTkFrame(card)
+        content.pack(fill='both', expand=True, padx=18, pady=18)
+
+        left = ctk.CTkFrame(content)
+        left.pack(side='left', fill='both', expand=True, padx=(0,16))
+        ctk.CTkLabel(left, text='Intercepción — Captive & Activation', font=ctk.CTkFont(size=18, weight='bold'), text_color="#00D1FF").pack(anchor='nw')
+        ctk.CTkLabel(left, text='Sigue estos pasos para capturar el ticket de activación desde un iPhone conectado.', wraplength=520).pack(anchor='nw', pady=(6,12))
+
+        # Big CTAs
+        ctk.CTkButton(left, text='Abrir Portal Cautivo', fg_color='#007AFF', width=420, height=48, command=lambda: webbrowser.open('https://127.0.0.1:5000/')).pack(anchor='w', pady=(6,8))
+        ctk.CTkButton(left, text='Mostrar QR del perfil', fg_color='#00A2A2', width=240, command=self._refresh_dashboard_qr).pack(anchor='w', pady=(6,8))
+
+        # small helper actions
+        aux_row = ctk.CTkFrame(left)
+        aux_row.pack(fill='x', pady=(8,10))
+        ctk.CTkButton(aux_row, text='Descargar certificado', fg_color='#0066CC', width=220, command=self._download_cert_action).pack(side='left', padx=(0,8))
+        ctk.CTkButton(aux_row, text='Limpiar consola', fg_color='#555555', width=140, command=lambda: (self.intercept_console.configure(state='normal'), self.intercept_console.delete('0.0','end'), self.intercept_console.configure(state='disabled'))).pack(side='left')
+
+        # right column: live log + status pills
+        right = ctk.CTkFrame(content, width=380)
+        right.pack(side='right', fill='y')
+        pill_row = ctk.CTkFrame(right)
+        pill_row.pack(fill='x', pady=(6,10))
+        self.dns_status_label = ctk.CTkLabel(pill_row, text='DNS: comprobando', fg_color='#08303A', corner_radius=12, width=160)
         self.dns_status_label.pack(side='left', padx=(0,8))
-        self.intercept_device_label = ctk.CTkLabel(header, text="Dispositivo: esperando", width=260, fg_color="#08303A", corner_radius=8)
-        self.intercept_device_label.pack(side='left', padx=(0,8))
-        self.intercept_traffic_label = ctk.CTkLabel(header, text="Tráfico: 0 eventos", width=180, fg_color="#08303A", corner_radius=8)
-        self.intercept_traffic_label.pack(side='left')
+        self.intercept_device_label = ctk.CTkLabel(pill_row, text='Dispositivo: —', fg_color='#08303A', corner_radius=12, width=200)
+        self.intercept_device_label.pack(side='left')
 
-        body = ctk.CTkFrame(parent)
-        body.pack(fill='both', expand=True, padx=12, pady=(0,12))
-
-        left = ctk.CTkFrame(body)
-        left.pack(side='left', fill='both', expand=True)
-        ctk.CTkLabel(left, text='Panel de Intercepción', font=ctk.CTkFont(size=16, weight='bold')).pack(anchor='nw')
-        ctk.CTkLabel(left, text='1) Conecta el USB. 2) Escanea el QR desde el iPhone. 3) Espera la captura del ticket.', wraplength=520).pack(anchor='nw', pady=(6,10))
-        ctk.CTkButton(left, text='Abrir Portal Cautivo', fg_color='#007ACC', command=lambda: webbrowser.open('https://127.0.0.1:5000/'), width=320).pack(anchor='nw', pady=(6,8))
-
-        right = ctk.CTkFrame(body, width=380)
-        right.pack(side='right', fill='y', padx=(12,0))
         ctk.CTkLabel(right, text='Live Intercept Log', font=ctk.CTkFont(size=13, weight='bold')).pack(anchor='nw')
-        self.intercept_console = ctk.CTkTextbox(right, height=340)
+        self.intercept_console = ctk.CTkTextbox(right, height=360)
         self.intercept_console.pack(fill='both', expand=True, pady=(6,0))
         self.intercept_console.configure(state='disabled')
 
-        # start polling events
+        # start polling events (preserve timing)
         try:
-            self.after(800, self._poll_intercept_events)
+            self.after(600, self._poll_intercept_events)
+        except Exception:
+            pass
+
+        # small visual polish: increase font clarity for pills
+        try:
+            self.dns_status_label.configure(text_color="#e6ffff")
+            self.intercept_device_label.configure(text_color="#e6ffff")
         except Exception:
             pass
 
